@@ -24,11 +24,16 @@ namespace FasterDictionary
 
 
             public string PersistDirectoryPath;
+            public string DictionaryName;
+
             public IKeyComparer KeyComparer;
             public MemorySizes SegmentSize;
             public MemorySizes PageSize;
             public MemorySizes MemorySize;
 
+            public ILogger Logger;
+
+            public bool DeleteOnClose;
         }
 
         Options _options;

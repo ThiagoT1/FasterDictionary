@@ -1,5 +1,6 @@
 ﻿using FASTER.core;
 using System;
+using System.IO;
 
 namespace FasterDictionary
 {
@@ -41,21 +42,34 @@ namespace FasterDictionary
 
         private void Initialize()
         {
-            var functions = new SimpleFunctions<>
+            var functions = new Functions(_options.Logger);
 
-            var log = Devices.CreateLogDevice(Path.GetTempPath() + "hlog.log");
-            var objlog = Devices.CreateLogDevice(Path.GetTempPath() + "hlog.obj.log");
+            Directory.CreateDirectory(Path.Combine(_options.PersistDirectoryPath, "Logs"));
 
-            var h = new FasterKV
-                <MyKey, MyValue, MyInput, MyOutput, MyContext, MyFunctions>
-                (1L << 20, new MyFunctions(),
-                new LogSettings { LogDevice = log, ObjectLogDevice = objlog, MemorySizeBits = 29 },
-                null,
-                new SerializerSettings<MyKey, MyValue> { keySerializer = () => new MyKeySerializer(), valueSerializer = () => new MyValueSerializer() }
+            var indexLogPath = Path.Combine(_options.PersistDirectoryPath, "Logs", $"{_options.DictionaryName}-index.log");
+            var objectLogPath = Path.Combine(_options.PersistDirectoryPath, "Logs", $"{_options.DictionaryName}-object.log");
+
+            var indexLog = Devices.CreateLogDevice(indexLogPath, true, _options.DeleteOnClose, -1, true);
+            var objectLog = Devices.CreateLogDevice(objectLogPath, true, _options.DeleteOnClose, -1, true);
+
+            KV = new FasterKV
+                <KeyEnvelope, ValueEnvelope, InputEnvelope, OutputEnvelope, Context, Functions>(
+                    1L << 20, functions,
+                    new LogSettings {
+                        LogDevice = indexLog,
+                        ObjectLogDevice = objectLog,
+                        SegmentSizeBits = (int)_options.SegmentSize,
+                        PageSizeBits = (int)_options.PageSize,
+                        MemorySizeBits = (int)_options.MemorySize 
+                    },
+                    null,
+                    new SerializerSettings<KeyEnvelope, ValueEnvelope> { 
+                        keySerializer = () => new KeySerializer(), 
+                        valueSerializer = () => new ValueSerializer() 
+                    }
                 );
-
-            KV = new 
-            throw new NotImplementedException();
         }
+
+        
     }
 }
