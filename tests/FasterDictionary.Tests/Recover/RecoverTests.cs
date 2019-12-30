@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Threading.Tasks;
 using Xunit;
 
 namespace FasterDictionary.Tests
@@ -33,11 +34,14 @@ namespace FasterDictionary.Tests
 
         [Theory]
         [InlineData(1)]
-        [InlineData(100)]
-        [InlineData(10_000)]
-        [InlineData(1000_000)]
-        public void AddGet(int iterations)
+        //[InlineData(100)]
+        //[InlineData(10_000)]
+        //[InlineData(1_000_000)]
+        public async Task AddGet(int iterations)
         {
+            var dictionary = new FasterDictionary<int, string>();
+            await dictionary.Upsert(1, "1");
+            var result = await dictionary.TryGet(1);
 
         }
 

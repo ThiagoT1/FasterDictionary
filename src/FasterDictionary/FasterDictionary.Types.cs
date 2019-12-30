@@ -1,17 +1,27 @@
 ﻿using FASTER.core;
+using Newtonsoft.Json;
 using System;
 namespace FasterDictionary
 {
     public partial class FasterDictionary<TKey, TValue>
     {
-        public class KeyEnvelope
+        public struct KeyEnvelope
         {
             public TKey Content;
+            public KeyEnvelope(TKey content)
+            {
+                Content = content;
+            }
         }
 
-        public class ValueEnvelope
+        public struct ValueEnvelope
         {
             public TValue Content;
+
+            public ValueEnvelope(TValue content)
+            {
+                Content = content;
+            }
 
             internal bool SameSize(ref TValue content)
             {
@@ -19,12 +29,12 @@ namespace FasterDictionary
             }
         }
 
-        public class InputEnvelope
+        public struct InputEnvelope
         {
             public TValue Content;
         }
 
-        public class OutputEnvelope
+        public struct OutputEnvelope
         {
             public ValueEnvelope Content;
         }
@@ -69,9 +79,9 @@ namespace FasterDictionary
 
             public ILogger Logger { get; }
 
-            public void CheckpointCompletionCallback(Guid sessionId, long serialNum)
+            public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
             {
-                Logger.Info(nameof(CheckpointCompletionCallback), $"SessionId: {sessionId}", $"SNum: {serialNum}");
+                Logger.Info(nameof(CheckpointCompletionCallback), $"SessionId: {sessionId}", $"CommitPoint: {JsonConvert.SerializeObject(commitPoint)}");
             }
 
             public void ConcurrentReader(ref KeyEnvelope key, ref InputEnvelope input, ref ValueEnvelope value, ref OutputEnvelope dst)
@@ -141,6 +151,8 @@ namespace FasterDictionary
         }
 
         FasterKV<KeyEnvelope, ValueEnvelope, InputEnvelope, OutputEnvelope, Context, Functions> KV;
+
+        ClientSession<KeyEnvelope, ValueEnvelope, InputEnvelope, OutputEnvelope, Context, Functions> KVSession;
     }
 }
 
