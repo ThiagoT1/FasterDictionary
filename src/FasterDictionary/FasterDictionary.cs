@@ -1,4 +1,5 @@
 ﻿using FASTER.core;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Concurrent;
 using System.IO;
@@ -11,9 +12,27 @@ namespace FasterDictionary
        
 
 
-        public FasterDictionary()
+        public FasterDictionary(Options options = default)
         {
             _options = Options.Default;
+            if (options.PersistDirectoryPath != null)
+            {
+                _options.DeleteOnClose = options.DeleteOnClose;
+                _options.DictionaryName = options.DictionaryName;
+                _options.KeyComparer = options.KeyComparer;
+                _options.Logger = options.Logger;
+                _options.PersistDirectoryPath = options.PersistDirectoryPath;
+                
+                if (options.MemorySize != 0)
+                    _options.MemorySize = options.MemorySize;
+
+                if (options.PageSize != 0)
+                    _options.PageSize = options.PageSize;
+
+                if (options.SegmentSize != 0)
+                    _options.SegmentSize = options.SegmentSize;
+            }
+
             JobQueue = new BlockingCollection<Job>();
             
             StartConsumer();
@@ -39,18 +58,21 @@ namespace FasterDictionary
             var indexLog = Devices.CreateLogDevice(indexLogPath, true, _options.DeleteOnClose, -1, true);
             var objectLog = Devices.CreateLogDevice(objectLogPath, true, _options.DeleteOnClose, -1, true);
 
+            UnsafeContext = new Context();
+
+            Log = new LogSettings
+            {
+                LogDevice = indexLog,
+                ObjectLogDevice = objectLog,
+                SegmentSizeBits = (int)_options.SegmentSize,
+                PageSizeBits = (int)_options.PageSize,
+                MemorySizeBits = (int)_options.MemorySize
+            };
 
             KV = new FasterKV
                 <KeyEnvelope, ValueEnvelope, InputEnvelope, OutputEnvelope, Context, Functions>(
                     1L << 20, functions,
-                    new LogSettings
-                    {
-                        LogDevice = indexLog,
-                        ObjectLogDevice = objectLog,
-                        SegmentSizeBits = (int)_options.SegmentSize,
-                        PageSizeBits = (int)_options.PageSize,
-                        MemorySizeBits = (int)_options.MemorySize
-                    },
+                    Log,
                     null,
                     new SerializerSettings<KeyEnvelope, ValueEnvelope>
                     {
@@ -79,8 +101,118 @@ namespace FasterDictionary
                 case JobTypes.Upsert:
                     ServeUpsert(job);
                     break;
+                
+                case JobTypes.Get:
+                    ServeGet(job);
+                    break;
+                
+                case JobTypes.Remove:
+                    ServeRemove(job);
+                    break;
+
+                case JobTypes.Ping:
+                    ServePing(job);
+                    break;
+
+                case JobTypes.Dispose:
+                    ServeDispose(job);
+                    break;
             }
 
+        }
+
+        private void ServePing(Job job)
+        {
+            job.Complete(false);
+        }
+
+        private void ServeDispose(Job job)
+        {
+            try
+            {
+
+                JobQueue.CompleteAdding();
+
+                Log.LogDevice.Close();
+                Log.ObjectLogDevice.Close();
+
+                KVSession.Dispose();
+                KV.Dispose();
+
+                job.Complete(false);
+
+            }
+            catch (Exception e)
+            {
+                job.Complete(e);
+            }
+        }
+
+        private void ServeRemove(Job job)
+        {
+            KeyEnvelope keyEnvelope = new KeyEnvelope(job.Key);
+            OutputEnvelope outputEnvelope = default;
+            Status status = Status.ERROR;
+            try
+            {
+                status = KVSession.Delete(ref keyEnvelope, UnsafeContext, GetSerialNum());
+                if (status == Status.PENDING)
+                {
+                    KVSession.CompletePending(true, true);
+                    status = UnsafeContext.Consume(out outputEnvelope);
+                }
+            }
+            catch (Exception e)
+            {
+                job.Complete(e);
+            }
+
+            switch (status)
+            {
+                case Status.ERROR:
+                    job.Complete(new Exception($"read error => {JsonConvert.SerializeObject(job.Key)}"));
+                    break;
+                case Status.NOTFOUND:
+                    job.Complete(false);
+                    break;
+                case Status.OK:
+                    job.Complete(true, default);
+                    break;
+            }
+        }
+
+        private void ServeGet(Job job)
+        {
+            KeyEnvelope keyEnvelope = new KeyEnvelope(job.Key);
+            InputEnvelope inputEnvelope = default;
+            OutputEnvelope outputEnvelope = default;
+            Status status = Status.ERROR;
+            try
+            {
+                status = KVSession.Read(ref keyEnvelope, ref inputEnvelope, ref outputEnvelope, UnsafeContext, GetSerialNum());
+                if (status == Status.PENDING)
+                {
+                    KVSession.CompletePending(true, true);
+                    status = UnsafeContext.Consume(out outputEnvelope);
+                }
+            }
+            catch (Exception e)
+            {
+                job.Complete(e);
+            }
+
+            switch (status)
+            {
+                case Status.ERROR:
+                    job.Complete(new Exception($"read error => {JsonConvert.SerializeObject(job.Key)}"));
+                    break;
+                case Status.NOTFOUND:
+                    job.Complete(false);
+                    break;
+                case Status.OK:
+                    job.Complete(true, outputEnvelope.Content.Content);
+                    break;
+            }
         }
 
         private void ServeUpsert(Job job)
@@ -97,7 +229,7 @@ namespace FasterDictionary
             }
             finally
             {
-                job.Complete(job.Input);
+                job.Complete(true, job.Input);
             }
         }
 
@@ -108,44 +240,60 @@ namespace FasterDictionary
             None = 0,
             Upsert = 1,
             Remove = 2,
-            Get = 3
+            Get = 3,
+            Ping = 4,
+            Dispose = 9
         }
         class Job
         {
-            public TaskCompletionSource<TValue> TaskSource;
+            public TaskCompletionSource<ReadResult> TaskSource;
             public TKey Key;
             public TValue Input;
             public JobTypes Type;
 
             public Job(TKey key, TValue input, JobTypes type)
             {
-                TaskSource = new TaskCompletionSource<TValue>(TaskCreationOptions.RunContinuationsAsynchronously);
+                TaskSource = new TaskCompletionSource<ReadResult>(TaskCreationOptions.RunContinuationsAsynchronously);
                 Key = key;
                 Input = input;
                 Type = type;
             }
 
-            public void Complete(TValue value) => TaskSource.TrySetResult(value);
+            public Job(TKey key, JobTypes type)
+            {
+                TaskSource = new TaskCompletionSource<ReadResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+                Key = key;
+                Type = type;
+            }
+
+            public Job(JobTypes type)
+            {
+                TaskSource = new TaskCompletionSource<ReadResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+                Type = type;
+            }
+
+            public void Complete(bool found, TValue value = default) => TaskSource.TrySetResult(new ReadResult(found, value));
             public void Complete(Exception e) => TaskSource.TrySetException(e);
         }
 
-        public readonly struct QueryResult 
+        public readonly struct ReadResult 
         {
             public readonly TValue Value;
             public readonly bool Found;
 
             
-            public QueryResult(bool found,  TValue value = default)
+            public ReadResult(bool found,  TValue value = default)
             {
                 Value = value;
-                Found = true;
+                Found = found;
             }
         }
 
 
-        private Task<TValue> Enqueue(Job job)
+        private Task<ReadResult> Enqueue(Job job)
         {
-            throw new Exception();
+            JobQueue.Add(job);
+            return job.TaskSource.Task;
         }
 
     }

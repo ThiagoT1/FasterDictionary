@@ -21,7 +21,7 @@ namespace FasterDictionary
 
     
 
-    public partial class FasterDictionary<TKey, TValue>
+    public partial class FasterDictionary<TKey, TValue> : IDisposable
     {
        
         public interface IKeyComparer
@@ -29,17 +29,34 @@ namespace FasterDictionary
 
         }
 
-        
-        public Task TryGet(TKey key)
+        public Task Ping()
         {
-            throw new NotImplementedException();
+            return Enqueue(new Job(JobTypes.Ping));
         }
 
-        public Task<TValue> Upsert(TKey key, TValue value)
+        public Task<ReadResult> TryGet(TKey key)
+        {
+            return Enqueue(new Job(key, JobTypes.Get));
+        }
+
+        public Task<ReadResult> Upsert(TKey key, TValue value)
         {
             return Enqueue(new Job(key, value, JobTypes.Upsert));
         }
 
+        public Task<ReadResult> Remove(TKey key)
+        {
+            return Enqueue(new Job(key, JobTypes.Remove));
+        }
 
+        public void Dispose()
+        {
+            Dispose(true);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            Enqueue(new Job(JobTypes.Dispose));
+        }
     }
 }

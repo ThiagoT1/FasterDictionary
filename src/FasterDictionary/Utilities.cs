@@ -2,11 +2,14 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace FasterDictionary
 {
     public static class Utilities
     {
+        public static void Forget(this Task task) { }
+        public static void Forget<T>(this Task<T> task) { }
         public static void WriteInt(this Stream target, int value)
         {
             target.WriteByte((byte)(value >> 24));

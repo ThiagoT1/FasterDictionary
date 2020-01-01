@@ -150,9 +150,15 @@ namespace FasterDictionary
             }
         }
 
+        LogSettings Log;
+
         FasterKV<KeyEnvelope, ValueEnvelope, InputEnvelope, OutputEnvelope, Context, Functions> KV;
 
         ClientSession<KeyEnvelope, ValueEnvelope, InputEnvelope, OutputEnvelope, Context, Functions> KVSession;
+
+        Context UnsafeContext;
+
+        
     }
 }
 
