@@ -29,22 +29,27 @@ namespace FasterDictionary
 
         }
 
-        public Task Ping()
+        public ValueTask<ReadResult> Ping()
         {
             return Enqueue(new Job(JobTypes.Ping));
         }
 
-        public Task<ReadResult> TryGet(TKey key)
+        public ValueTask<ReadResult> Save()
+        {
+            return Enqueue(new Job(JobTypes.Save));
+        }
+
+        public ValueTask<ReadResult> TryGet(TKey key)
         {
             return Enqueue(new Job(key, JobTypes.Get));
         }
 
-        public Task<ReadResult> Upsert(TKey key, TValue value)
+        public ValueTask<ReadResult> Upsert(TKey key, TValue value)
         {
             return Enqueue(new Job(key, value, JobTypes.Upsert));
         }
 
-        public Task<ReadResult> Remove(TKey key)
+        public ValueTask<ReadResult> Remove(TKey key)
         {
             return Enqueue(new Job(key, JobTypes.Remove));
         }

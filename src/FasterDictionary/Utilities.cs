@@ -10,6 +10,9 @@ namespace FasterDictionary
     {
         public static void Forget(this Task task) { }
         public static void Forget<T>(this Task<T> task) { }
+
+        public static void Forget(this ValueTask task) { }
+        public static void Forget<T>(this ValueTask<T> task) { }
         public static void WriteInt(this Stream target, int value)
         {
             target.WriteByte((byte)(value >> 24));

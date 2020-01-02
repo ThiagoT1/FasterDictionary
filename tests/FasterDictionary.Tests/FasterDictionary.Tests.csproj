@@ -21,10 +21,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="ReadWrite\" />
-  </ItemGroup>
-
-  <ItemGroup>
     <ProjectReference Include="..\..\src\FasterDictionary\FasterDictionary.csproj" />
   </ItemGroup>
 

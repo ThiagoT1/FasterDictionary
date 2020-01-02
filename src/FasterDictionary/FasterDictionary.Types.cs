@@ -151,6 +151,8 @@ namespace FasterDictionary
         }
 
         LogSettings Log;
+        IDevice IndexLog;
+        IDevice ObjectLog;
 
         FasterKV<KeyEnvelope, ValueEnvelope, InputEnvelope, OutputEnvelope, Context, Functions> KV;
 

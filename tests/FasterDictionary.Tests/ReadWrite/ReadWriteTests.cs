@@ -6,17 +6,17 @@ using Xunit;
 namespace FasterDictionary.Tests
 {
     [CollectionDefinition("Non-Parallel Collection", DisableParallelization = true)]
-    public class RecoverTests : IDisposable
+    public class ReadWriteTests : IDisposable
     {
 
 
         static string DataDirectoryPath;
-        static RecoverTests()
+        static ReadWriteTests()
         {
             DataDirectoryPath = Path.Combine(Path.GetTempPath(), "FasterDictionary.Tests");
         }
 
-        public RecoverTests()
+        public ReadWriteTests()
         {
             ExcludeFiles();
         }
@@ -34,18 +34,14 @@ namespace FasterDictionary.Tests
 
         [Theory]
         [InlineData(2, 1)]
-        //[InlineData(100, 1)]
-        //[InlineData(10_000, 1)]
-        //[InlineData(1_000_000, 2)]
-        //[InlineData(10_000_000, 20)]
-        public async Task AddRestartGet(int loops, int step)
+        [InlineData(100, 1)]
+        [InlineData(10_000, 1)]
+        [InlineData(1_000_000, 2)]
+        [InlineData(10_000_000, 20)]
+        public async Task AddGet(int loops, int step)
         {
-            var options = GetOptions($"{nameof(AddRestartGet)}-{loops}");
-
-            options.DeleteOnClose = false;
-
             FasterDictionary<int, string>.ReadResult result;
-            using (var dictionary = new FasterDictionary<int, string>(options))
+            using (var dictionary = new FasterDictionary<int, string>(GetOptions($"{nameof(AddGet)}-{loops}")))
             {
                 for (var i = 0; i < loops; i++)
                     await dictionary.Upsert(i, (i + 1).ToString());
@@ -59,20 +55,24 @@ namespace FasterDictionary.Tests
                     Assert.Equal((i + 1).ToString(), result.Value);
                 }
 
-                await dictionary.Save();
+                result = await dictionary.TryGet(loops);
+                Assert.False(result.Found);
             }
+        }
 
-            using (var dictionary = new FasterDictionary<int, string>(options))
+        [Theory]
+        [InlineData(2, 1)]
+        [InlineData(100, 1)]
+        [InlineData(10_000, 1)]
+        [InlineData(1_000_000, 2)]
+        [InlineData(10_000_000, 20)]
+        public async Task AddGetRemove(int loops, int step)
+        {
+            FasterDictionary<int, string>.ReadResult result;
+            using (var dictionary = new FasterDictionary<int, string>(GetOptions($"{nameof(AddGetRemove)}-{loops}")))
             {
-                for (var i = 0; i < loops; i += step)
-                {
-                    result = await dictionary.TryGet(i);
-                    Assert.True(result.Found);
-                    Assert.Equal((i + 1).ToString(), result.Value);
-                }
-
                 for (var i = 0; i < loops; i++)
-                    await dictionary.Upsert(i, (i + 2).ToString());
+                    await dictionary.Upsert(i, (i + 1).ToString());
 
                 await dictionary.Ping();
 
@@ -80,33 +80,38 @@ namespace FasterDictionary.Tests
                 {
                     result = await dictionary.TryGet(i);
                     Assert.True(result.Found);
-                    Assert.Equal((i + 2).ToString(), result.Value);
+                    Assert.Equal((i + 1).ToString(), result.Value);
                 }
-            }
 
-            options.DeleteOnClose = true;
+                for (var i = 0; i < loops; i += step)
+                    if (i % 5 != 0)
+                        await dictionary.Remove(i);
 
-            using (var dictionary = new FasterDictionary<int, string>(options))
-            {
+
                 for (var i = 0; i < loops; i += step)
                 {
+
                     result = await dictionary.TryGet(i);
-                    Assert.True(result.Found);
-                    Assert.Equal((i + 2).ToString(), result.Value);
+                    if (i % 5 == 0)
+                    {
+                        Assert.True(result.Found);
+                        Assert.Equal((i + 1).ToString(), result.Value);
+                    }
+                    else
+                    {
+                        Assert.False(result.Found);
+                    }
                 }
             }
-
-
         }
 
-        private static FasterDictionary<int, string>.Options GetOptions( string directoryName, bool deleteOnClose = true)
+        private static FasterDictionary<int, string>.Options GetOptions(string directoryName, bool deleteOnClose = true)
         {
             return new FasterDictionary<int, string>.Options()
             {
                 DictionaryName = directoryName,
                 PersistDirectoryPath = DataDirectoryPath,
-                DeleteOnClose = deleteOnClose,
-                Logger = new FasterLogger()
+                DeleteOnClose = deleteOnClose
             };
         }
 

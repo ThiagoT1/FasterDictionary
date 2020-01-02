@@ -3,7 +3,9 @@ using Newtonsoft.Json;
 using System;
 using System.Collections.Concurrent;
 using System.IO;
+using System.Threading.Channels;
 using System.Threading.Tasks;
+using System.Threading.Tasks.Sources;
 
 namespace FasterDictionary
 {
@@ -33,12 +35,18 @@ namespace FasterDictionary
                     _options.SegmentSize = options.SegmentSize;
             }
 
-            JobQueue = new BlockingCollection<Job>();
+            JobQueue = Channel.CreateUnbounded<Job>(new UnboundedChannelOptions()
+            {
+                AllowSynchronousContinuations = true,
+                SingleReader = true,
+                SingleWriter = false
+
+            });
             
             StartConsumer();
         }
 
-        BlockingCollection<Job> JobQueue;
+        Channel<Job> JobQueue;
         Task JobConsumerTask;
 
         private void StartConsumer()
@@ -46,7 +54,7 @@ namespace FasterDictionary
             JobConsumerTask = Task.Factory.StartNew(ConsumeJobs, TaskCreationOptions.LongRunning);
         }
 
-        private void ConsumeJobs()
+        private async Task ConsumeJobs()
         {
             var functions = new Functions(_options.Logger);
 
@@ -55,15 +63,15 @@ namespace FasterDictionary
             var indexLogPath = Path.Combine(_options.PersistDirectoryPath, "Logs", $"{_options.DictionaryName}-index.log");
             var objectLogPath = Path.Combine(_options.PersistDirectoryPath, "Logs", $"{_options.DictionaryName}-object.log");
 
-            var indexLog = Devices.CreateLogDevice(indexLogPath, true, _options.DeleteOnClose, -1, true);
-            var objectLog = Devices.CreateLogDevice(objectLogPath, true, _options.DeleteOnClose, -1, true);
+            IndexLog = Devices.CreateLogDevice(indexLogPath, true, _options.DeleteOnClose, -1, true);
+            ObjectLog = Devices.CreateLogDevice(objectLogPath, true, _options.DeleteOnClose, -1, true);
 
             UnsafeContext = new Context();
 
             Log = new LogSettings
             {
-                LogDevice = indexLog,
-                ObjectLogDevice = objectLog,
+                LogDevice = IndexLog,
+                ObjectLogDevice = ObjectLog,
                 SegmentSizeBits = (int)_options.SegmentSize,
                 PageSizeBits = (int)_options.PageSize,
                 MemorySizeBits = (int)_options.MemorySize
@@ -83,11 +91,25 @@ namespace FasterDictionary
 
             KVSession = KV.NewSession();
 
-            foreach (var job in JobQueue.GetConsumingEnumerable())
-                ServeJob(job);
+            var reader = JobQueue.Reader;
+
+            while (await reader.WaitToReadAsync())
+            {
+                while (reader.TryRead(out Job item))
+                {
+                    ServeJob(item);
+                    if (item.Type == JobTypes.Dispose)
+                        return;
+                }
+
+                
+
+            }
         }
 
         long serialNum = 0;
+
+        
 
         private long GetSerialNum()
         {
@@ -114,11 +136,33 @@ namespace FasterDictionary
                     ServePing(job);
                     break;
 
+                case JobTypes.Save:
+                    ServeSave(job);
+                    break;
+
                 case JobTypes.Dispose:
                     ServeDispose(job);
                     break;
             }
 
+        }
+
+        private async ValueTask ServeSave(Job job)
+        {
+            try
+            {
+                KV.Log.FlushAndEvict(true);
+
+                KV.TakeFullCheckpoint(out Guid token);
+                await KV.CompleteCheckpointAsync();
+
+                job.Complete(false);
+
+            }
+            catch (Exception e)
+            {
+                job.Complete(e);
+            }
         }
 
         private void ServePing(Job job)
@@ -131,7 +175,7 @@ namespace FasterDictionary
             try
             {
 
-                JobQueue.CompleteAdding();
+                JobQueue.Writer.Complete();
 
                 Log.LogDevice.Close();
                 Log.ObjectLogDevice.Close();
@@ -242,18 +286,23 @@ namespace FasterDictionary
             Remove = 2,
             Get = 3,
             Ping = 4,
+            Save = 5,
             Dispose = 9
         }
-        class Job
+        class Job : IValueTaskSource<ReadResult>
         {
-            public TaskCompletionSource<ReadResult> TaskSource;
+            const bool ContinueAsync = true;
+            const bool ContinueSync = false;
+
+            public AsyncOperation<ReadResult> AsyncOp;
             public TKey Key;
             public TValue Input;
             public JobTypes Type;
 
             public Job(TKey key, TValue input, JobTypes type)
             {
-                TaskSource = new TaskCompletionSource<ReadResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+                AsyncOp = new AsyncOperation<ReadResult>(ContinueAsync);
+                //TaskSource = new TaskCompletionSource<ReadResult>(TaskCreationOptions.RunContinuationsAsynchronously);
                 Key = key;
                 Input = input;
                 Type = type;
@@ -261,19 +310,34 @@ namespace FasterDictionary
 
             public Job(TKey key, JobTypes type)
             {
-                TaskSource = new TaskCompletionSource<ReadResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+                AsyncOp = new AsyncOperation<ReadResult>(ContinueAsync);
                 Key = key;
                 Type = type;
             }
 
             public Job(JobTypes type)
             {
-                TaskSource = new TaskCompletionSource<ReadResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+                AsyncOp = new AsyncOperation<ReadResult>(ContinueAsync);
                 Type = type;
             }
 
-            public void Complete(bool found, TValue value = default) => TaskSource.TrySetResult(new ReadResult(found, value));
-            public void Complete(Exception e) => TaskSource.TrySetException(e);
+            public void Complete(bool found, TValue value = default) => AsyncOp?.TrySetResult(new ReadResult(found, value));
+            public void Complete(Exception e) => AsyncOp?.TrySetException(e);
+
+            public ReadResult GetResult(short token)
+            {
+                throw new NotImplementedException();
+            }
+
+            public ValueTaskSourceStatus GetStatus(short token)
+            {
+                throw new NotImplementedException();
+            }
+
+            public void OnCompleted(Action<object> continuation, object state, short token, ValueTaskSourceOnCompletedFlags flags)
+            {
+                throw new NotImplementedException();
+            }
         }
 
         public readonly struct ReadResult 
@@ -290,10 +354,12 @@ namespace FasterDictionary
         }
 
 
-        private Task<ReadResult> Enqueue(Job job)
+        private ValueTask<ReadResult> Enqueue(Job job)
         {
-            JobQueue.Add(job);
-            return job.TaskSource.Task;
+            JobQueue.Writer.TryWrite(job);
+            if (job.AsyncOp == null)
+                return new ValueTask<ReadResult>(default(ReadResult));
+            return job.AsyncOp.ValueTaskOfT;
         }
 
     }
