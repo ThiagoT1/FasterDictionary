@@ -1,3 +1,4 @@
+using FASTER.core;
 using System;
 using System.IO;
 using System.Linq;
@@ -34,12 +35,15 @@ namespace FasterDictionary.Tests
         }
 
         [Theory]
-        [InlineData(226, 1)]
-        [InlineData(227, 1)]
-        public async Task AddRestartGetValues(int loops, int step)
+        [InlineData(226, 1, CheckpointType.FoldOver)]  //OK
+        [InlineData(227, 1, CheckpointType.FoldOver)]  //FAIL
+        [InlineData(2832, 1, CheckpointType.Snapshot)] //OK
+        [InlineData(2833, 1, CheckpointType.Snapshot)] //FAIL
+        public async Task AddRestartGetValues(int loops, int step, CheckpointType checkpointType)
         {
             var options = GetOptions($"{nameof(AddRestartGetValues)}-{loops}");
 
+            options.CheckPointType = checkpointType;
             options.DeleteOnClose = false;
 
             FasterDictionary<int, string>.ReadResult result;
@@ -92,7 +96,7 @@ namespace FasterDictionary.Tests
                 DictionaryName = directoryName,
                 PersistDirectoryPath = DataDirectoryPath,
                 DeleteOnClose = deleteOnClose,
-                CheckPointType = FASTER.core.CheckpointType.FoldOver,
+                CheckPointType = FASTER.core.CheckpointType.Snapshot,
                 Logger = new FasterLogger()
             };
         }
