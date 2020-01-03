@@ -33,14 +33,14 @@ namespace FasterDictionary.Tests
         }
 
         [Theory]
-        [InlineData(2, 1)]
+        //[InlineData(2, 1)]
         //[InlineData(100, 1)]
         //[InlineData(10_000, 1)]
         //[InlineData(1_000_000, 2)]
-        //[InlineData(10_000_000, 20)]
-        public async Task AddRestartGet(int loops, int step)
+        [InlineData(10_000_000, 20)]
+        public async Task AddRestartGetValues(int loops, int step)
         {
-            var options = GetOptions($"{nameof(AddRestartGet)}-{loops}");
+            var options = GetOptions($"{nameof(AddRestartGetValues)}-{loops}");
 
             options.DeleteOnClose = false;
 
@@ -64,7 +64,7 @@ namespace FasterDictionary.Tests
 
             using (var dictionary = new FasterDictionary<int, string>(options))
             {
-                for (var i = 0; i < loops; i += step)
+                for (var i = 0; i < loops; i++)
                 {
                     result = await dictionary.TryGet(i);
                     Assert.True(result.Found);
@@ -82,6 +82,8 @@ namespace FasterDictionary.Tests
                     Assert.True(result.Found);
                     Assert.Equal((i + 2).ToString(), result.Value);
                 }
+
+                await dictionary.Save();
             }
 
             options.DeleteOnClose = true;
@@ -106,6 +108,7 @@ namespace FasterDictionary.Tests
                 DictionaryName = directoryName,
                 PersistDirectoryPath = DataDirectoryPath,
                 DeleteOnClose = deleteOnClose,
+                CheckPointType = FASTER.core.CheckpointType.FoldOver,
                 Logger = new FasterLogger()
             };
         }

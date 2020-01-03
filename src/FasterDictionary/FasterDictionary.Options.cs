@@ -1,4 +1,5 @@
-﻿using System;
+﻿using FASTER.core;
+using System;
 using System.Collections.Generic;
 using System.Text;
 
@@ -34,6 +35,8 @@ namespace FasterDictionary
             public ILogger Logger;
 
             public bool DeleteOnClose;
+
+            public CheckpointType CheckPointType;
         }
 
         Options _options;

@@ -24,6 +24,9 @@ namespace FasterDictionary
                 _options.KeyComparer = options.KeyComparer;
                 _options.Logger = options.Logger;
                 _options.PersistDirectoryPath = options.PersistDirectoryPath;
+
+                if (options.CheckPointType != CheckpointType.Snapshot)
+                    _options.CheckPointType = options.CheckPointType; 
                 
                 if (options.MemorySize != 0)
                     _options.MemorySize = options.MemorySize;
@@ -58,10 +61,14 @@ namespace FasterDictionary
         {
             var functions = new Functions(_options.Logger);
 
-            Directory.CreateDirectory(Path.Combine(_options.PersistDirectoryPath, "Logs"));
+            var checkpointDir = Path.Combine(_options.PersistDirectoryPath, "CheckPoints");
+            var logDir = Path.Combine(_options.PersistDirectoryPath, "Logs");
 
-            var indexLogPath = Path.Combine(_options.PersistDirectoryPath, "Logs", $"{_options.DictionaryName}-index.log");
-            var objectLogPath = Path.Combine(_options.PersistDirectoryPath, "Logs", $"{_options.DictionaryName}-object.log");
+            Directory.CreateDirectory(logDir);
+            Directory.CreateDirectory(checkpointDir);
+
+            var indexLogPath = Path.Combine(logDir, $"{_options.DictionaryName}-index.log");
+            var objectLogPath = Path.Combine(logDir, $"{_options.DictionaryName}-object.log");
 
             IndexLog = Devices.CreateLogDevice(indexLogPath, true, _options.DeleteOnClose, -1, true);
             ObjectLog = Devices.CreateLogDevice(objectLogPath, true, _options.DeleteOnClose, -1, true);
@@ -77,17 +84,27 @@ namespace FasterDictionary
                 MemorySizeBits = (int)_options.MemorySize
             };
 
+            var checkpointSettings = new CheckpointSettings()
+            {
+                CheckpointDir = checkpointDir,
+                CheckPointType = _options.CheckPointType
+            };
+
             KV = new FasterKV
                 <KeyEnvelope, ValueEnvelope, InputEnvelope, OutputEnvelope, Context, Functions>(
                     1L << 20, functions,
                     Log,
-                    null,
+                    checkpointSettings,
                     new SerializerSettings<KeyEnvelope, ValueEnvelope>
                     {
                         keySerializer = () => new KeySerializer(),
                         valueSerializer = () => new ValueSerializer()
                     }
                 );
+
+            var logCount = Directory.GetDirectories(checkpointDir).Length;
+            if (logCount > 0)
+                KV.Recover();
 
             KVSession = KV.NewSession();
 
@@ -97,7 +114,7 @@ namespace FasterDictionary
             {
                 while (reader.TryRead(out Job item))
                 {
-                    ServeJob(item);
+                    await ServeJob(item);
                     if (item.Type == JobTypes.Dispose)
                         return;
                 }
@@ -116,7 +133,7 @@ namespace FasterDictionary
             return serialNum++;
         }
 
-        private void ServeJob(Job job)
+        private Task ServeJob(Job job)
         {
             switch (job.Type)
             {
@@ -137,21 +154,22 @@ namespace FasterDictionary
                     break;
 
                 case JobTypes.Save:
-                    ServeSave(job);
-                    break;
+                    return ServeSave(job);
 
                 case JobTypes.Dispose:
                     ServeDispose(job);
                     break;
             }
 
+            return Task.CompletedTask;
+
         }
 
-        private async ValueTask ServeSave(Job job)
+        private async Task ServeSave(Job job)
         {
             try
             {
-                KV.Log.FlushAndEvict(true);
+                //KV.Log.FlushAndEvict(true);
 
                 KV.TakeFullCheckpoint(out Guid token);
                 await KV.CompleteCheckpointAsync();
