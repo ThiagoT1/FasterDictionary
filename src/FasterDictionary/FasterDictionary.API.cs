@@ -8,7 +8,9 @@ namespace FasterDictionary
 {
     public enum MemorySizes
     {
-        MB16 = 27,
+        MB4 = 22,
+        MB8 = MB4 + 1,
+        MB16 = MB8 + 1,
         MB32 = MB16 + 1,
         MB64 = MB32 + 1,
         MB128 = MB64 + 1,

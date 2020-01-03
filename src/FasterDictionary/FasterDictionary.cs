@@ -114,7 +114,7 @@ namespace FasterDictionary
             {
                 while (reader.TryRead(out Job item))
                 {
-                    await ServeJob(item);
+                    ServeJob(item);
                     if (item.Type == JobTypes.Dispose)
                         return;
                 }
@@ -133,7 +133,7 @@ namespace FasterDictionary
             return serialNum++;
         }
 
-        private Task ServeJob(Job job)
+        private void ServeJob(Job job)
         {
             switch (job.Type)
             {
@@ -154,14 +154,14 @@ namespace FasterDictionary
                     break;
 
                 case JobTypes.Save:
-                    return ServeSave(job);
+                    Task.Run(async () => await ServeSave(job)).Wait();
+                    break;
 
                 case JobTypes.Dispose:
                     ServeDispose(job);
                     break;
             }
 
-            return Task.CompletedTask;
 
         }
 
