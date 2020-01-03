@@ -34,13 +34,8 @@ namespace FasterDictionary.Tests
         }
 
         [Theory]
-        //[InlineData(2, 1)]
-        //[InlineData(100, 1)]
         [InlineData(226, 1)]
         [InlineData(227, 1)]
-        //[InlineData(174_763, 1)]
-        //[InlineData(1_000_000, 2)]
-        //[InlineData(10_000_000, 20)]
         public async Task AddRestartGetValues(int loops, int step)
         {
             var options = GetOptions($"{nameof(AddRestartGetValues)}-{loops}");
