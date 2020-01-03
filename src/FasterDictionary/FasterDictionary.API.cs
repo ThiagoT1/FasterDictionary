@@ -63,7 +63,7 @@ namespace FasterDictionary
 
         protected virtual void Dispose(bool disposing)
         {
-            Enqueue(new Job(JobTypes.Dispose));
+            Task.Run(async () => await Enqueue(new Job(JobTypes.Dispose))).Wait();
         }
     }
 }
