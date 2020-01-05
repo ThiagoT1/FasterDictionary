@@ -1,58 +1,162 @@
 ﻿using FASTER.core;
 using Newtonsoft.Json;
 using System;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Text;
+
 namespace FasterDictionary
 {
+    [StructLayout(LayoutKind.Explicit)]
+    public unsafe struct VariableEnvelope
+    {
+        static UTF8Encoding UTF8;
+        internal static IVariableLengthStruct<VariableEnvelope> Settings;
+        static VariableEnvelope()
+        {
+            UTF8 = new UTF8Encoding(false);
+            Settings = new StructSettings();
+        }
+
+        [FieldOffset(0)]
+        public int Size;
+
+
+
+        public void ToByteArray(ref byte[] dst)
+        {
+            dst = new byte[Size];
+            byte* src = (byte*)Unsafe.AsPointer(ref this);
+            src += sizeof(int);
+            for (int i = 0; i < Size; i++)
+            {
+                dst[i] = *src;
+                src++;
+            }
+        }
+
+        public void CopyTo(ref VariableEnvelope dst)
+        {
+            var fulllength = Size * sizeof(byte) + sizeof(int);
+            Buffer.MemoryCopy(Unsafe.AsPointer(ref this),
+                Unsafe.AsPointer(ref dst), fulllength, fulllength);
+        }
+
+        public static unsafe ref VariableEnvelope From<T>(T value)
+        {
+            var json = JsonConvert.SerializeObject(value);
+            var length = UTF8.GetByteCount(json);
+            
+            //var bytes = new byte[length + sizeof(int)];
+            //var target = (byte*)Unsafe.AsPointer(ref bytes);
+
+            var target = stackalloc byte[length + sizeof(int)];
+
+            ref VariableEnvelope instance = ref *(VariableEnvelope*)target;
+
+            target += sizeof(int);
+
+            fixed (char* jsonChars = json)
+                UTF8.GetBytes(jsonChars, length, target, length);
+
+            instance.Size = length;
+
+#if DEBUG
+            Console.WriteLine(JsonConvert.SerializeObject(instance.To<T>()));
+#endif
+
+            return ref instance;
+        }
+
+        public unsafe T To<T>()
+        {
+            byte* src = (byte*)Unsafe.AsPointer(ref this);
+            src += sizeof(int);
+            var json = UTF8.GetString(src, Size);
+            return JsonConvert.DeserializeObject<T>(json);
+        }
+
+        
+
+        class StructSettings : IVariableLengthStruct<VariableEnvelope>
+        {
+            public int GetAverageLength()
+            {
+                return 64;
+            }
+
+            public int GetInitialLength<Input>(ref Input input)
+            {
+                return sizeof(int);
+            }
+
+            public int GetLength(ref VariableEnvelope t)
+            {
+                return sizeof(byte) * t.Size + sizeof(int);
+            }
+        }
+
+        public unsafe long GetHashCode64()
+        {
+            int result = 23;
+            byte* src = (byte*)Unsafe.AsPointer(ref this);
+            src += sizeof(int);
+            var upperBound = Size;
+            if (Size > 64)
+                upperBound = 64;
+            for (var i = 0; i < upperBound; i++)
+                result *= (int)src[i] + 1;
+            
+            return result;
+        }
+    }
+
+    public struct VariableEnvelopeComparer : IFasterEqualityComparer<VariableEnvelope>
+    {
+        public long GetHashCode64(ref VariableEnvelope k)
+        {
+            return k.GetHashCode64();
+        }
+
+        public unsafe bool Equals(ref VariableEnvelope k1, ref VariableEnvelope k2)
+        {
+            if (k1.Size != k2.Size)
+                return false;
+
+            byte* src = (byte*)Unsafe.AsPointer(ref k1);
+            byte* dst = (byte*)Unsafe.AsPointer(ref k2);
+
+            src += sizeof(int);
+            dst += sizeof(int);
+
+            for (int i = 0; i < k1.Size; i++)
+                if (src[i] != dst[i])
+                    return false;
+
+            return true;
+        }
+    }
+
     public partial class FasterDictionary<TKey, TValue>
     {
-        public struct KeyEnvelope
-        {
-            public TKey Content;
-            public KeyEnvelope(TKey content)
-            {
-                Content = content;
-            }
-        }
+        
+        
 
-        public struct ValueEnvelope
-        {
-            public TValue Content;
-
-            public ValueEnvelope(TValue content)
-            {
-                Content = content;
-            }
-
-            internal bool SameSize(ref TValue content)
-            {
-                return false;
-            }
-        }
-
-        public struct InputEnvelope
-        {
-            public TValue Content;
-        }
-
-        public struct OutputEnvelope
-        {
-            public ValueEnvelope Content;
-        }
 
         public class Context
         {
             public static Context Empty = new Context();
 
             Status Status = Status.NOTFOUND;
-            OutputEnvelope Value;
+            byte[] Value;
 
-            internal void CompleteRead(ref Status status, ref OutputEnvelope output)
+            internal void CompleteRead(ref Status status, ref byte[] output)
             {
                 Status = status;
                 Value = output;
             }
 
-            internal Status Consume(out OutputEnvelope output)
+            internal Status Consume(out byte[] output)
             {
                 output = Value;
                 Value = default;
@@ -70,7 +174,7 @@ namespace FasterDictionary
         }
 
 
-        public class Functions : IFunctions<KeyEnvelope, ValueEnvelope, InputEnvelope, OutputEnvelope, Context>
+        public class Functions : IFunctions<VariableEnvelope, VariableEnvelope, byte[], byte[], Context>
         {
             public Functions(ILogger logger)
             {
@@ -84,69 +188,62 @@ namespace FasterDictionary
                 Logger.Info(nameof(CheckpointCompletionCallback), $"SessionId: {sessionId}", $"CommitPoint: {JsonConvert.SerializeObject(commitPoint)}");
             }
 
-            public void ConcurrentReader(ref KeyEnvelope key, ref InputEnvelope input, ref ValueEnvelope value, ref OutputEnvelope dst)
+            public void ConcurrentReader(ref VariableEnvelope key, ref byte[] input, ref VariableEnvelope value, ref byte[] dst)
             {
-                dst.Content = value;
+                value.ToByteArray(ref dst);
             }
 
-            public bool ConcurrentWriter(ref KeyEnvelope key, ref ValueEnvelope src, ref ValueEnvelope dst)
+            public bool ConcurrentWriter(ref VariableEnvelope key, ref VariableEnvelope src, ref VariableEnvelope dst)
             {
-                if (!src.SameSize(ref dst.Content))
-                    return false;
-                
-                dst = src;
+                src.CopyTo(ref dst);
                 return true;
             }
 
-            public bool InPlaceUpdater(ref KeyEnvelope key, ref InputEnvelope input, ref ValueEnvelope value)
+            public bool InPlaceUpdater(ref VariableEnvelope key, ref byte[] input, ref VariableEnvelope value)
             {
-                if (!value.SameSize(ref input.Content))
-                    return false;
-
-                value.Content = input.Content;
                 return true;
             }
 
-            public void CopyUpdater(ref KeyEnvelope key, ref InputEnvelope input, ref ValueEnvelope oldValue, ref ValueEnvelope newValue)
+            public void CopyUpdater(ref VariableEnvelope key, ref byte[] input, ref VariableEnvelope oldValue, ref VariableEnvelope newValue)
             {
-                newValue = oldValue;
+                //newValue = oldValue;
             }
 
-            public void DeleteCompletionCallback(ref KeyEnvelope key, Context ctx)
+            public void DeleteCompletionCallback(ref VariableEnvelope key, Context ctx)
             {
-                Logger.Trace(nameof(DeleteCompletionCallback), $"Key: {key.Content}");
+                Logger.Trace(nameof(DeleteCompletionCallback), $"Key: {key.Size}");
             }
 
-            public void InitialUpdater(ref KeyEnvelope key, ref InputEnvelope input, ref ValueEnvelope value)
+            public void InitialUpdater(ref VariableEnvelope key, ref byte[] input, ref VariableEnvelope value)
             {
-                value.Content = input.Content;
+                //value.Content = input.Content;
             }
 
             
 
-            public void ReadCompletionCallback(ref KeyEnvelope key, ref InputEnvelope input, ref OutputEnvelope output, Context ctx, Status status)
+            public void ReadCompletionCallback(ref VariableEnvelope key, ref byte[] input, ref byte[] output, Context ctx, Status status)
             {
                 ctx.CompleteRead(ref status, ref output);
             }
 
-            public void RMWCompletionCallback(ref KeyEnvelope key, ref InputEnvelope input, Context ctx, Status status)
+            public void RMWCompletionCallback(ref VariableEnvelope key, ref byte[] input, Context ctx, Status status)
             {
-                Logger.Trace(nameof(RMWCompletionCallback), $"Key: {key.Content}");
+                Logger.Trace(nameof(RMWCompletionCallback), $"Key: {key.Size}");
             }
 
-            public void SingleReader(ref KeyEnvelope key, ref InputEnvelope input, ref ValueEnvelope value, ref OutputEnvelope dst)
+            public void SingleReader(ref VariableEnvelope key, ref byte[] input, ref VariableEnvelope value, ref byte[] dst)
             {
-                dst.Content = value;
+                value.ToByteArray(ref dst);
             }
 
-            public void SingleWriter(ref KeyEnvelope key, ref ValueEnvelope src, ref ValueEnvelope dst)
+            public void SingleWriter(ref VariableEnvelope key, ref VariableEnvelope src, ref VariableEnvelope dst)
             {
-                dst = src;
+                src.CopyTo(ref dst);
             }
 
-            public void UpsertCompletionCallback(ref KeyEnvelope key, ref ValueEnvelope value, Context ctx)
+            public void UpsertCompletionCallback(ref VariableEnvelope  key, ref VariableEnvelope value, Context ctx)
             {
-                Logger.Trace(nameof(UpsertCompletionCallback), $"Key: {key.Content}");
+                Logger.Trace(nameof(UpsertCompletionCallback), $"Key: {key.Size}");
             }
         }
 
@@ -154,9 +251,9 @@ namespace FasterDictionary
         IDevice IndexLog;
         IDevice ObjectLog;
 
-        FasterKV<KeyEnvelope, ValueEnvelope, InputEnvelope, OutputEnvelope, Context, Functions> KV;
+        FasterKV<VariableEnvelope, VariableEnvelope, byte[], byte[], Context, Functions> KV;
 
-        ClientSession<KeyEnvelope, ValueEnvelope, InputEnvelope, OutputEnvelope, Context, Functions> KVSession;
+        ClientSession<VariableEnvelope, VariableEnvelope, byte[], byte[], Context, Functions> KVSession;
 
         Context UnsafeContext;
 

@@ -16,22 +16,11 @@ namespace FasterDictionary
             UTF8 = new UTF8Encoding(false);
         }
 
-        class KeySerializer : BaseSerializer<KeyEnvelope, TKey>
-        {
-            public override void Deserialize(ref KeyEnvelope obj) => Deserialize(ref obj.Content);
-            public override void Serialize(ref KeyEnvelope obj) => Serialize(ref obj.Content);
-        }
-        class ValueSerializer : BaseSerializer<ValueEnvelope, TValue>
-        {
-            public override void Deserialize(ref ValueEnvelope obj) => Deserialize(ref obj.Content);
-            public override void Serialize(ref ValueEnvelope obj) => Serialize(ref obj.Content);
-        }
-
-        abstract class BaseSerializer<TEnvelope, TContent> : IObjectSerializer<TEnvelope>
+        static class ByteSerializer<TContent>
         {
             static bool IsBytePayload;
             static bool IsIntPayload;
-            static BaseSerializer()
+            static ByteSerializer()
             {
                 if (typeof(TContent) == typeof(byte[]))
                     IsBytePayload = true;
@@ -39,64 +28,37 @@ namespace FasterDictionary
                     IsIntPayload = true;
             }
 
-            protected Stream Writer;
-            protected Stream Reader;
-
-            public void BeginDeserialize(Stream stream) => Reader = stream;
-            public void BeginSerialize(Stream stream) => Writer = stream;
-
-            public abstract void Deserialize(ref TEnvelope obj);
-            public abstract void Serialize(ref TEnvelope obj);
-
-            public virtual void Deserialize(ref TContent obj)
+            public static void Deserialize(ref byte[] source, ref TContent target)
             {
-                int size = Reader.ReadInt();
-                byte[] payload = new byte[size];
-                Reader.Read(payload, 0, payload.Length);
-
                 if (IsBytePayload)
                 {
-                    obj = (TContent)(object)payload;
+                    target = (TContent)(object)source;
                 }
                 else if (IsIntPayload)
                 {
-                    obj = (TContent)(object)BitConverter.ToInt32(payload, 0);
+                    target = (TContent)(object)BitConverter.ToInt32(source, 0);
                 }
                 else
                 {
-                    obj = JsonConvert.DeserializeObject<TContent>(UTF8.GetString(payload));
+                    target = JsonConvert.DeserializeObject<TContent>(UTF8.GetString(source));
                 }
             }
-            public virtual void Serialize(ref TContent content)
-            {
-                int size = 0;
-                byte[] payload = null;
 
+            public static void Serialize(ref TContent source, ref byte[] target)
+            {
                 if (IsBytePayload)
                 {
-                    payload = content as byte[];
-                    if (payload != null)
-                        size = payload.Length;
+                    target = source as byte[];
                 }
                 else if (IsIntPayload)
                 {
-                    payload = BitConverter.GetBytes((int)(object)content);
-                    size = payload.Length;
+                    target = BitConverter.GetBytes((int)(object)source);
                 }
                 else
                 {
-                    payload = UTF8.GetBytes(JsonConvert.SerializeObject(content));
-                    size = payload.Length;
+                    target = UTF8.GetBytes(JsonConvert.SerializeObject(source));
                 }
-
-                Writer.WriteInt(size);
-                Writer.Write(payload, 0, payload.Length);
             }
-
-            public void EndDeserialize() => Reader = null;
-            public void EndSerialize() => Writer = null;
         }
-
-        
     }
 }

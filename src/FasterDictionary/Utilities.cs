@@ -21,7 +21,6 @@ namespace FasterDictionary
             target.WriteByte((byte)(value));
         }
 
-
         public static int ReadInt(this Stream source)
         {
             var value = source.ReadByte() << 24;

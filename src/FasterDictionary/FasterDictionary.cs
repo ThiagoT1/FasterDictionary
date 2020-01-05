@@ -90,16 +90,20 @@ namespace FasterDictionary
                 CheckPointType = _options.CheckPointType
             };
 
+            var variableLengthStructSettings = new VariableLengthStructSettings<VariableEnvelope, VariableEnvelope>()
+            {
+                keyLength = VariableEnvelope.Settings,
+                valueLength = VariableEnvelope.Settings
+            };
+
             KV = new FasterKV
-                <KeyEnvelope, ValueEnvelope, InputEnvelope, OutputEnvelope, Context, Functions>(
+                <VariableEnvelope, VariableEnvelope, byte[], byte[], Context, Functions>(
                     1L << 20, functions,
                     Log,
                     checkpointSettings,
-                    new SerializerSettings<KeyEnvelope, ValueEnvelope>
-                    {
-                        keySerializer = () => new KeySerializer(),
-                        valueSerializer = () => new ValueSerializer()
-                    }
+                    null,
+                    new VariableEnvelopeComparer(),
+                    variableLengthStructSettings
                 );
 
             var logCount = Directory.GetDirectories(checkpointDir).Length;
@@ -212,8 +216,8 @@ namespace FasterDictionary
 
         private void ServeRemove(Job job)
         {
-            KeyEnvelope keyEnvelope = new KeyEnvelope(job.Key);
-            OutputEnvelope outputEnvelope = default;
+            VariableEnvelope keyEnvelope = VariableEnvelope.From(job.Key);
+            byte[] output = default;
             Status status = Status.ERROR;
             try
             {
@@ -221,7 +225,7 @@ namespace FasterDictionary
                 if (status == Status.PENDING)
                 {
                     KVSession.CompletePending(true, true);
-                    status = UnsafeContext.Consume(out outputEnvelope);
+                    status = UnsafeContext.Consume(out output);
                 }
             }
             catch (Exception e)
@@ -245,9 +249,9 @@ namespace FasterDictionary
 
         private void ServeGet(Job job)
         {
-            KeyEnvelope keyEnvelope = new KeyEnvelope(job.Key);
-            InputEnvelope inputEnvelope = default;
-            OutputEnvelope outputEnvelope = default;
+            VariableEnvelope keyEnvelope = VariableEnvelope.From(job.Key);
+            byte[] inputEnvelope = default;
+            byte[] outputEnvelope = default;
             Status status = Status.ERROR;
             try
             {
@@ -272,15 +276,16 @@ namespace FasterDictionary
                     job.Complete(false);
                     break;
                 case Status.OK:
-                    job.Complete(true, outputEnvelope.Content.Content);
+                    TValue value = JsonConvert.DeserializeObject<TValue>(UTF8.GetString(outputEnvelope));
+                    job.Complete(true, value);
                     break;
             }
         }
 
-        private void ServeUpsert(Job job)
+        private unsafe void ServeUpsert(Job job)
         {
-            KeyEnvelope keyEnvelope = new KeyEnvelope(job.Key);
-            ValueEnvelope valueEnvelope = new ValueEnvelope(job.Input);
+            ref var keyEnvelope = ref VariableEnvelope.From(job.Key);
+            ref var valueEnvelope = ref VariableEnvelope.From(job.Input);
             try
             {
                 KVSession.Upsert(ref keyEnvelope, ref valueEnvelope, Context.Empty, GetSerialNum());
