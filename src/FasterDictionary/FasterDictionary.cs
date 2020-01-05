@@ -68,20 +68,26 @@ namespace FasterDictionary
             Directory.CreateDirectory(checkpointDir);
 
             var indexLogPath = Path.Combine(logDir, $"{_options.DictionaryName}-index.log");
-            var objectLogPath = Path.Combine(logDir, $"{_options.DictionaryName}-object.log");
+            //var objectLogPath = Path.Combine(logDir, $"{_options.DictionaryName}-object.log");
 
             IndexLog = Devices.CreateLogDevice(indexLogPath, true, _options.DeleteOnClose, -1, true);
-            ObjectLog = Devices.CreateLogDevice(objectLogPath, true, _options.DeleteOnClose, -1, true);
+            //ObjectLog = Devices.CreateLogDevice(objectLogPath, true, _options.DeleteOnClose, -1, true);
 
             UnsafeContext = new Context();
 
             Log = new LogSettings
             {
                 LogDevice = IndexLog,
-                ObjectLogDevice = ObjectLog,
+                //ObjectLogDevice = ObjectLog,
                 SegmentSizeBits = (int)_options.SegmentSize,
                 PageSizeBits = (int)_options.PageSize,
-                MemorySizeBits = (int)_options.MemorySize
+                MemorySizeBits = (int)_options.MemorySize,
+                CopyReadsToTail = true
+                //,ReadCacheSettings = new ReadCacheSettings()
+                //{
+                //    MemorySizeBits = (int)_options.MemorySize,
+                //    PageSizeBits = (int)_options.PageSize
+                //}
             };
 
             var checkpointSettings = new CheckpointSettings()
@@ -214,9 +220,32 @@ namespace FasterDictionary
             }
         }
 
-        private void ServeRemove(Job job)
+        private unsafe void ServeRemove(Job job)
         {
-            VariableEnvelope keyEnvelope = VariableEnvelope.From(job.Key);
+
+            var keyJson = JsonConvert.SerializeObject(job.Key);
+            var keyLength = UTF8.GetByteCount(keyJson);
+
+            //var bytes = new byte[length + sizeof(int)];
+            //var target = (byte*)Unsafe.AsPointer(ref bytes);
+
+            var keyTarget = stackalloc byte[keyLength + sizeof(int)];
+
+            ref VariableEnvelope keyEnvelope = ref *(VariableEnvelope*)keyTarget;
+
+            keyTarget += sizeof(int);
+
+            fixed (char* jsonChars = keyJson)
+                UTF8.GetBytes(jsonChars, keyLength, keyTarget, keyLength);
+
+            keyEnvelope.Size = keyLength;
+
+#if DEBUG
+            //Console.WriteLine(JsonConvert.SerializeObject(keyEnvelope.To<TKey>()));
+#endif
+
+
+
             byte[] output = default;
             Status status = Status.ERROR;
             try
@@ -247,9 +276,33 @@ namespace FasterDictionary
             }
         }
 
-        private void ServeGet(Job job)
+        private unsafe void ServeGet(Job job)
         {
-            VariableEnvelope keyEnvelope = VariableEnvelope.From(job.Key);
+
+
+            var keyJson = JsonConvert.SerializeObject(job.Key);
+            var keyLength = UTF8.GetByteCount(keyJson);
+
+            //var bytes = new byte[length + sizeof(int)];
+            //var target = (byte*)Unsafe.AsPointer(ref bytes);
+
+            var keyTarget = stackalloc byte[keyLength + sizeof(int)];
+
+            ref VariableEnvelope keyEnvelope = ref *(VariableEnvelope*)keyTarget;
+
+            keyTarget += sizeof(int);
+
+            fixed (char* jsonChars = keyJson)
+                UTF8.GetBytes(jsonChars, keyLength, keyTarget, keyLength);
+
+            keyEnvelope.Size = keyLength;
+
+#if DEBUG
+            //Console.WriteLine(JsonConvert.SerializeObject(keyEnvelope.To<TKey>()));
+#endif
+
+
+
             byte[] inputEnvelope = default;
             byte[] outputEnvelope = default;
             Status status = Status.ERROR;
@@ -284,8 +337,50 @@ namespace FasterDictionary
 
         private unsafe void ServeUpsert(Job job)
         {
-            ref var keyEnvelope = ref VariableEnvelope.From(job.Key);
-            ref var valueEnvelope = ref VariableEnvelope.From(job.Input);
+            var keyJson = JsonConvert.SerializeObject(job.Key);
+            var keyLength = UTF8.GetByteCount(keyJson);
+
+            //var bytes = new byte[length + sizeof(int)];
+            //var target = (byte*)Unsafe.AsPointer(ref bytes);
+
+            var keyTarget = stackalloc byte[keyLength + sizeof(int)];
+
+            ref VariableEnvelope keyEnvelope = ref *(VariableEnvelope*)keyTarget;
+
+            keyTarget += sizeof(int);
+
+            fixed (char* jsonChars = keyJson)
+                UTF8.GetBytes(jsonChars, keyLength, keyTarget, keyLength);
+
+            keyEnvelope.Size = keyLength;
+
+#if DEBUG
+            //Console.WriteLine(JsonConvert.SerializeObject(keyEnvelope.To<TKey>()));
+#endif
+
+
+            var valueJson = JsonConvert.SerializeObject(job.Input);
+            var valueLength = UTF8.GetByteCount(valueJson);
+
+            //var bytes = new byte[length + sizeof(int)];
+            //var target = (byte*)Unsafe.AsPointer(ref bytes);
+
+            var valueTarget = stackalloc byte[valueLength + sizeof(int)];
+
+            ref VariableEnvelope valueEnvelope = ref *(VariableEnvelope*)valueTarget;
+
+            valueTarget += sizeof(int);
+
+            fixed (char* jsonChars = valueJson)
+                UTF8.GetBytes(jsonChars, valueLength, valueTarget, valueLength);
+
+            valueEnvelope.Size = valueLength;
+
+#if DEBUG
+            //Console.WriteLine(JsonConvert.SerializeObject(valueEnvelope.To<TValue>()));
+#endif
+
+
             try
             {
                 KVSession.Upsert(ref keyEnvelope, ref valueEnvelope, Context.Empty, GetSerialNum());

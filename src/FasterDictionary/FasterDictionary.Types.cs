@@ -42,32 +42,6 @@ namespace FasterDictionary
                 Unsafe.AsPointer(ref dst), fulllength, fulllength);
         }
 
-        public static unsafe ref VariableEnvelope From<T>(T value)
-        {
-            var json = JsonConvert.SerializeObject(value);
-            var length = UTF8.GetByteCount(json);
-            
-            //var bytes = new byte[length + sizeof(int)];
-            //var target = (byte*)Unsafe.AsPointer(ref bytes);
-
-            var target = stackalloc byte[length + sizeof(int)];
-
-            ref VariableEnvelope instance = ref *(VariableEnvelope*)target;
-
-            target += sizeof(int);
-
-            fixed (char* jsonChars = json)
-                UTF8.GetBytes(jsonChars, length, target, length);
-
-            instance.Size = length;
-
-#if DEBUG
-            Console.WriteLine(JsonConvert.SerializeObject(instance.To<T>()));
-#endif
-
-            return ref instance;
-        }
-
         public unsafe T To<T>()
         {
             byte* src = (byte*)Unsafe.AsPointer(ref this);
@@ -100,10 +74,11 @@ namespace FasterDictionary
         {
             int result = 23;
             byte* src = (byte*)Unsafe.AsPointer(ref this);
-            src += sizeof(int);
-            var upperBound = Size;
-            if (Size > 64)
+            
+            var upperBound = Size + sizeof(int);
+            if (upperBound > 64)
                 upperBound = 64;
+
             for (var i = 0; i < upperBound; i++)
                 result *= (int)src[i] + 1;
             
@@ -120,16 +95,15 @@ namespace FasterDictionary
 
         public unsafe bool Equals(ref VariableEnvelope k1, ref VariableEnvelope k2)
         {
-            if (k1.Size != k2.Size)
-                return false;
-
             byte* src = (byte*)Unsafe.AsPointer(ref k1);
             byte* dst = (byte*)Unsafe.AsPointer(ref k2);
 
-            src += sizeof(int);
-            dst += sizeof(int);
+            for (int i = 0; i < sizeof(int); i++)
+                if (src[i] != dst[i])
+                    return false;
 
-            for (int i = 0; i < k1.Size; i++)
+
+            for (int i = k1.Size + 3; i >= 4; i--)
                 if (src[i] != dst[i])
                     return false;
 
@@ -249,7 +223,7 @@ namespace FasterDictionary
 
         LogSettings Log;
         IDevice IndexLog;
-        IDevice ObjectLog;
+        //IDevice ObjectLog;
 
         FasterKV<VariableEnvelope, VariableEnvelope, byte[], byte[], Context, Functions> KV;
 

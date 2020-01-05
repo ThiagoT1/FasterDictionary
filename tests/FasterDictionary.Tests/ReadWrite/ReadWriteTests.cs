@@ -37,7 +37,7 @@ namespace FasterDictionary.Tests
         [InlineData(100, 1)]
         [InlineData(10_000, 1)]
         [InlineData(1_000_000, 2)]
-        [InlineData(10_000_000, 20)]
+        [InlineData(5_000_000, 10_000)]
         public async Task AddGet(int loops, int step)
         {
             FasterDictionary<int, string>.ReadResult result;
@@ -65,7 +65,7 @@ namespace FasterDictionary.Tests
         [InlineData(100, 1)]
         [InlineData(10_000, 1)]
         [InlineData(1_000_000, 2)]
-        [InlineData(10_000_000, 20)]
+        [InlineData(5_000_000, 10_000)]
         public async Task AddGetRemove(int loops, int step)
         {
             FasterDictionary<int, string>.ReadResult result;
