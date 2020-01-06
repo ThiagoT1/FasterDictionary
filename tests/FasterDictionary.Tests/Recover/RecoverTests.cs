@@ -35,8 +35,8 @@ namespace FasterDictionary.Tests
         }
 
         [Theory]
-        [InlineData(226, 1, CheckpointType.FoldOver)]  //OK
-        [InlineData(227, 1, CheckpointType.FoldOver)]  //FAIL
+        [InlineData(2833, 1, CheckpointType.FoldOver)]  //OK
+        [InlineData(2834, 1, CheckpointType.FoldOver)]  //FAIL
         [InlineData(2832, 1, CheckpointType.Snapshot)] //OK
         [InlineData(2833, 1, CheckpointType.Snapshot)] //FAIL
         public async Task AddRestartGetValues(int loops, int step, CheckpointType checkpointType)
