@@ -15,7 +15,7 @@ namespace FasterDictionary.Tests
         static string DataDirectoryPath;
         static RecoverTests()
         {
-            DataDirectoryPath = Path.Combine(Path.GetTempPath(), "FasterDictionary.Tests");
+            DataDirectoryPath = Path.Combine(Path.GetTempPath(), "FasterDictionary.Tests", "RecoverTests");
         }
 
         public RecoverTests()
@@ -36,9 +36,10 @@ namespace FasterDictionary.Tests
 
         [Theory]
         [InlineData(2833, 1, CheckpointType.FoldOver)]  //OK
-        [InlineData(2834, 1, CheckpointType.FoldOver)]  //FAIL
+        [InlineData(2834, 1, CheckpointType.FoldOver)]  //OK
+        [InlineData(50000, 1, CheckpointType.FoldOver)]  //OK
         [InlineData(2832, 1, CheckpointType.Snapshot)] //OK
-        [InlineData(2833, 1, CheckpointType.Snapshot)] //FAIL
+        [InlineData(50000, 1, CheckpointType.Snapshot)] //OK
         public async Task AddRestartGetValues(int loops, int step, CheckpointType checkpointType)
         {
             var options = GetOptions($"{nameof(AddRestartGetValues)}-{loops}");
@@ -68,7 +69,10 @@ namespace FasterDictionary.Tests
                 await dictionary.Save();
             }
 
+
+
             for (var k = 0; k < 3; k++)
+            {
                 using (var dictionary = new FasterDictionary<int, string>(options))
                 {
                     await dictionary.Ping();
@@ -81,6 +85,11 @@ namespace FasterDictionary.Tests
                         Assert.Equal(guid, result.Value);
                     }
                 }
+
+                //so the next test case does not fail
+                if (k == 2)
+                    options.DeleteOnClose = true;
+            }
 
         }
 
