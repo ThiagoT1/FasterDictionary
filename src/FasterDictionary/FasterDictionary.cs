@@ -71,7 +71,7 @@ namespace FasterDictionary
             var objectLogPath = Path.Combine(logDir, $"{_options.DictionaryName}-object.log");
 
             IndexLog = Devices.CreateLogDevice(indexLogPath, true, _options.DeleteOnClose, -1, true);
-            ObjectLog = Devices.CreateLogDevice(objectLogPath, false, _options.DeleteOnClose, -1, true);
+            ObjectLog = Devices.CreateLogDevice(objectLogPath, true, _options.DeleteOnClose, -1, true);
 
             UnsafeContext = new Context();
 

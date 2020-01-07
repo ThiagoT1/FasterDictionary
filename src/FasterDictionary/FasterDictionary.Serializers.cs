@@ -35,8 +35,8 @@ namespace FasterDictionary
             {
                 if (typeof(TContent) == typeof(byte[]))
                     IsBytePayload = true;
-                else if (typeof(TContent) == typeof(int))
-                    IsIntPayload = true;
+                //else if (typeof(TContent) == typeof(int))
+                //    IsIntPayload = true;
             }
 
             protected Stream Writer;
