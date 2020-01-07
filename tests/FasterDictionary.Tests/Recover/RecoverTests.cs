@@ -15,7 +15,7 @@ namespace FasterDictionary.Tests
         static string DataDirectoryPath;
         static RecoverTests()
         {
-            DataDirectoryPath = Path.Combine(Path.GetTempPath(), "FasterDictionary.Tests");
+            DataDirectoryPath = Path.Combine(Path.GetTempPath(), "FasterDictionary.Tests", "RecoverTests");
         }
 
         public RecoverTests()
@@ -35,10 +35,12 @@ namespace FasterDictionary.Tests
         }
 
         [Theory]
-        [InlineData(904, 1, CheckpointType.FoldOver)]  //OK
-        [InlineData(905, 1, CheckpointType.FoldOver)]  //FAIL
+        [InlineData(904, 1, CheckpointType.FoldOver)] //OK
+        [InlineData(905, 1, CheckpointType.FoldOver)] //OK
+        [InlineData(5000, 1, CheckpointType.FoldOver)] //OK
         [InlineData(904, 1, CheckpointType.Snapshot)] //OK
-        [InlineData(905, 1, CheckpointType.Snapshot)] //FAIL
+        [InlineData(905, 1, CheckpointType.Snapshot)] //OK
+        [InlineData(5000, 1, CheckpointType.Snapshot)] //OK
         public async Task AddRestartGetValues(int loops, int step, CheckpointType checkpointType)
         {
             var options = GetOptions($"{nameof(AddRestartGetValues)}-{loops}");
