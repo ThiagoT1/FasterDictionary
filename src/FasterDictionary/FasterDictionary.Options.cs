@@ -9,18 +9,18 @@ namespace FasterDictionary
     {
         public struct Options
         {
-            static Options FasterDefaults = new Options()
-            {
-                SegmentSize = MemorySizes.GB1,
-                MemorySize = MemorySizes.MB512,
-                PageSize = MemorySizes.MB32
-            };
+            //static Options FasterDefaults = new Options()
+            //{
+            //    SegmentSize = MemorySizes.GB1,
+            //    MemorySize = MemorySizes.MB512,
+            //    PageSize = MemorySizes.MB32
+            //};
 
             public static readonly Options Default = new Options()
             {
-                MemorySize = MemorySizes.MB128,
-                PageSize = MemorySizes.MB16,
-                SegmentSize = MemorySizes.MB64
+                MemorySize = MemorySizes.MB16,
+                PageSize = MemorySizes.MB4,
+                SegmentSize = MemorySizes.MB8
             };
 
 

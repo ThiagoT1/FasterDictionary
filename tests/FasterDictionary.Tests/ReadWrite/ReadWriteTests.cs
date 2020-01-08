@@ -13,7 +13,7 @@ namespace FasterDictionary.Tests
         static string DataDirectoryPath;
         static ReadWriteTests()
         {
-            DataDirectoryPath = Path.Combine(Path.GetTempPath(), "FasterDictionary.Tests");
+            DataDirectoryPath = Path.Combine(Path.GetTempPath(), "FasterDictionary.Tests", "ReadWriteTests");
         }
 
         public ReadWriteTests()
@@ -36,8 +36,8 @@ namespace FasterDictionary.Tests
         [InlineData(2, 1)]
         [InlineData(100, 1)]
         [InlineData(10_000, 1)]
-        [InlineData(1_000_000, 2)]
-        [InlineData(10_000_000, 20)]
+        [InlineData(1_000_000, 4)]
+        [InlineData(5_000_000, 31)]
         public async Task AddGet(int loops, int step)
         {
             FasterDictionary<int, string>.ReadResult result;
@@ -64,8 +64,8 @@ namespace FasterDictionary.Tests
         [InlineData(2, 1)]
         [InlineData(100, 1)]
         [InlineData(10_000, 1)]
-        [InlineData(1_000_000, 2)]
-        [InlineData(10_000_000, 20)]
+        [InlineData(1_000_000, 4)]
+        [InlineData(2_500_000, 31)]
         public async Task AddGetRemove(int loops, int step)
         {
             FasterDictionary<int, string>.ReadResult result;

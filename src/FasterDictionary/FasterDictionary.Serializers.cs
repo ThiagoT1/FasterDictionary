@@ -30,12 +30,13 @@ namespace FasterDictionary
         abstract class BaseSerializer<TEnvelope, TContent> : IObjectSerializer<TEnvelope>
         {
             static bool IsBytePayload;
+            static bool IsIntPayload;
             static BaseSerializer()
             {
-                if (typeof(TKey) == typeof(byte[]))
+                if (typeof(TContent) == typeof(byte[]))
                     IsBytePayload = true;
-                else
-                    IsBytePayload = false;
+                else if (typeof(TContent) == typeof(int))
+                    IsIntPayload = true;
             }
 
             protected Stream Writer;
@@ -57,6 +58,10 @@ namespace FasterDictionary
                 {
                     obj = (TContent)(object)payload;
                 }
+                else if (IsIntPayload)
+                {
+                    obj = (TContent)(object)BitConverter.ToInt32(payload, 0);
+                }
                 else
                 {
                     obj = JsonConvert.DeserializeObject<TContent>(UTF8.GetString(payload));
@@ -72,6 +77,11 @@ namespace FasterDictionary
                     payload = content as byte[];
                     if (payload != null)
                         size = payload.Length;
+                }
+                else if (IsIntPayload)
+                {
+                    payload = BitConverter.GetBytes((int)(object)content);
+                    size = payload.Length;
                 }
                 else
                 {
