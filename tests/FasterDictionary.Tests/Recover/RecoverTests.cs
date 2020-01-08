@@ -15,7 +15,7 @@ namespace FasterDictionary.Tests
         static string DataDirectoryPath;
         static RecoverTests()
         {
-            DataDirectoryPath = Path.Combine(Path.GetTempPath(), "FasterDictionary.Tests");
+            DataDirectoryPath = Path.Combine(Path.GetTempPath(), "FasterDictionary.Tests", "RecoverTests");
         }
 
         public RecoverTests()
@@ -36,9 +36,12 @@ namespace FasterDictionary.Tests
 
         [Theory]
         [InlineData(226, 1, CheckpointType.FoldOver)]  //OK
-        [InlineData(227, 1, CheckpointType.FoldOver)]  //FAIL
+        [InlineData(227, 1, CheckpointType.FoldOver)]  //OK
+        [InlineData(50_000, 1, CheckpointType.FoldOver)]  //OK
+        
         [InlineData(2832, 1, CheckpointType.Snapshot)] //OK
-        [InlineData(2833, 1, CheckpointType.Snapshot)] //FAIL
+        [InlineData(2833, 1, CheckpointType.Snapshot)] //OK
+        [InlineData(50_000, 1, CheckpointType.Snapshot)] //OK
         public async Task AddRestartGetValues(int loops, int step, CheckpointType checkpointType)
         {
             var options = GetOptions($"{nameof(AddRestartGetValues)}-{loops}");
@@ -84,7 +87,7 @@ namespace FasterDictionary.Tests
 
         }
 
-        private static string GetGuid(int i, int count = 1000)
+        private static string GetGuid(int i, int count = 100)
         {
             return string.Join('-', Enumerable.Repeat(new Guid(i, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0).ToString(), count).ToArray());
         }
