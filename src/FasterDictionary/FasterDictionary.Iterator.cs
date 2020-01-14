@@ -27,32 +27,17 @@ namespace FasterDictionary
             public KeyComparerAdapter(IFasterEqualityComparer<TKey> keyComparer)
             {
                 _keyComparer = keyComparer;
-                Buckets = new Dictionary<int, BucketInfo>();
             }
 
             public bool Equals(ref KeyEnvelope k1, ref KeyEnvelope k2)
             {
-                if (k1.Type != k2.Type)
-                    return false;
-
-                switch (k1.Type)
-                {
-                    case KeyTypes.Content: return _keyComparer.Equals(ref k1.Content, ref k2.Content);
-                    case KeyTypes.IndexBucket: return k1.BucketId == k2.BucketId;
-                }
-
-                return false;
+                return _keyComparer.Equals(ref k1.Content, ref k2.Content); 
             }
 
 
             public long GetHashCode64(ref KeyEnvelope k)
             {
-                switch (k.Type)
-                {
-                    case KeyTypes.Content: return _keyComparer.GetHashCode64(ref k.Content);
-                    case KeyTypes.IndexBucket: return k.BucketId;
-                }
-                return 0;
+                return _keyComparer.GetHashCode64(ref k.Content);
             }
 
             public int GetBucketId(TKey key)
@@ -70,52 +55,85 @@ namespace FasterDictionary
                 return (int)_keyComparer.GetHashCode64(ref obj);
             }
 
-            public Dictionary<int, BucketInfo> Buckets;
-
-        }
-
-        private bool TryGetBucket(int bucketId, out BucketInfo bucketInfo)
-        {
-            if (_keyComparer.Buckets.TryGetValue(bucketId, out bucketInfo))
-                return true;
-
-            if (TryReadIndexBucket(bucketId, out bucketInfo))
-                return true;
-
-            bucketInfo = null;
-            return false;
         }
 
 
-        private bool TryReadIndexBucket(int bucketId, out BucketInfo bucketInfo)
+        public void Compact(long untilAddress)
         {
-            bucketInfo = null;
-
-            KeyEnvelope keyEnvelope = new KeyEnvelope(bucketId);
-
-            ValueEnvelope inputEnvelope = default;
-            ValueEnvelope outputEnvelope = default;
-
-            Status status = Status.ERROR;
-
-
-            status = ExecuteGet(ref keyEnvelope, ref inputEnvelope, ref outputEnvelope);
-
-            switch (status)
+            if (allocator is VariableLengthBlittableAllocator<Key, Value> varLen)
             {
-                case Status.ERROR:
-                    throw new Exception($"Index Bucket read error => {bucketId}");
+                var functions = new LogVariableCompactFunctions(varLen);
+                var variableLengthStructSettings = new VariableLengthStructSettings<Key, Value>
+                {
+                    keyLength = varLen.KeyLength,
+                    valueLength = varLen.ValueLength,
+                };
 
-                case Status.NOTFOUND:
-                    return false;
+                Compact(functions, untilAddress, variableLengthStructSettings);
+            }
+            else
+            {
+                Compact(new LogCompactFunctions(), untilAddress, null);
+            }
+        }
 
-                case Status.OK:
-                    bucketInfo = outputEnvelope.Bucket;
-                    return true;
+        private void Compact<T>(T functions, long untilAddress, VariableLengthStructSettings<Key, Value> variableLengthStructSettings)
+            where T : IFunctions<Key, Value, Input, Output, Context>
+        {
+            var fhtSession = fht.NewSession();
+
+            var originalUntilAddress = untilAddress;
+
+            var tempKv = new FasterKV<Key, Value, Input, Output, Context, T>
+                (fht.IndexSize, functions, new LogSettings(), comparer: fht.Comparer, variableLengthStructSettings: variableLengthStructSettings);
+            var tempKvSession = tempKv.NewSession();
+
+            using (var iter1 = fht.Log.Scan(fht.Log.BeginAddress, untilAddress))
+            {
+                while (iter1.GetNext(out RecordInfo recordInfo))
+                {
+                    ref var key = ref iter1.GetKey();
+                    ref var value = ref iter1.GetValue();
+
+                    if (recordInfo.Tombstone)
+                        tempKvSession.Delete(ref key, default, 0);
+                    else
+                        tempKvSession.Upsert(ref key, ref value, default, 0);
+                }
             }
 
-            return false;
+            // TODO: Scan until SafeReadOnlyAddress
+            long scanUntil = untilAddress;
+            LogScanForValidity(ref untilAddress, ref scanUntil, ref tempKvSession);
+
+            // Make sure key wasn't inserted between SafeReadOnlyAddress and TailAddress
+
+            using (var iter3 = tempKv.Log.Scan(tempKv.Log.BeginAddress, tempKv.Log.TailAddress))
+            {
+                while (iter3.GetNext(out RecordInfo recordInfo))
+                {
+                    ref var key = ref iter3.GetKey();
+                    ref var value = ref iter3.GetValue();
+
+                    if (!recordInfo.Tombstone)
+                    {
+                        if (fhtSession.ContainsKeyInMemory(ref key, scanUntil) == Status.NOTFOUND)
+                            fhtSession.Upsert(ref key, ref value, default, 0);
+                    }
+                    if (scanUntil < fht.Log.SafeReadOnlyAddress)
+                    {
+                        LogScanForValidity(ref untilAddress, ref scanUntil, ref tempKvSession);
+                    }
+                }
+            }
+            fhtSession.Dispose();
+            tempKvSession.Dispose();
+            tempKv.Dispose();
+
+            ShiftBeginAddress(originalUntilAddress);
         }
+
+
 
     }
 }

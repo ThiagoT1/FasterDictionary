@@ -66,7 +66,41 @@ namespace FasterDictionary.Tests
         [InlineData(100, 1)]
         [InlineData(10_000, 1)]
         [InlineData(1_000_000, 4)]
-        [InlineData(2_500_000, 31)]
+        [InlineData(5_000_000, 31)]
+        public async Task AddUpdateGet(int loops, int step)
+        {
+            FasterDictionary<int, string>.ReadResult result;
+            using (var dictionary = new FasterDictionary<int, string>(TestHelper.GetKeyComparer<int>(), GetOptions($"{nameof(AddGet)}-{loops}")))
+            {
+                for (var i = 0; i < loops; i++)
+                    dictionary.Upsert(i, (i + 1).ToString()).Forget();
+
+                await dictionary.Ping();
+
+                for (var i = 0; i < loops; i++)
+                    dictionary.Upsert(i, (i + 2).ToString()).Forget();
+
+                for (var i = 0; i < loops; i += step)
+                {
+                    result = await dictionary.TryGet(i);
+                    Assert.True(result.Found);
+                    Assert.Equal((i + 2).ToString(), result.Value);
+                }
+
+                await dictionary.Ping();
+
+
+                result = await dictionary.TryGet(loops);
+                Assert.False(result.Found);
+            }
+        }
+
+        [Theory]
+        [InlineData(2, 1)]
+        [InlineData(100, 1)]
+        [InlineData(10_000, 1)]
+        [InlineData(1_000_000, 4)]
+        [InlineData(5_000_000, 31)]
         public async Task AddGetRemove(int loops, int step)
         {
             FasterDictionary<int, string>.ReadResult result;

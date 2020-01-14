@@ -6,193 +6,34 @@ using System.Text;
 
 namespace FasterDictionary
 {
+
+   
     public partial class FasterDictionary<TKey, TValue>
     {
-        public enum KeyTypes : byte
-        {
-            Content = 0,
-            IndexBucket = 1 
-        }
+        
         
         public struct KeyEnvelope
         {
             public TKey Content;
-            public KeyTypes Type { get => BucketId == 0 ? KeyTypes.Content : KeyTypes.IndexBucket; }
-
-            public int BucketId;
-
+            
             public KeyEnvelope(TKey content)
             {
                 Content = content;
-                BucketId = 0;
-            }
-
-            public KeyEnvelope(int bucketId)
-            {
-                Content = default;
-                BucketId = bucketId;
             }
         }
 
-
-        public class BucketInfo
-        {
-            public static int PaddingSize = 128 * 1024;
-            public BucketInfo()
-            {
-                Changed = true;
-            }
-
-            public int Id;
-            public HashSet<TKey> Keys;
-
-
-            byte[] _serializedContent;
-            
-
-            [JsonIgnore]
-            public bool Changed { get; private set; }
-
-
-            internal void EnsureSerialized()
-            {
-                if (Changed || _serializedContent == null)
-                    _serializedContent = UTF8.GetBytes(JsonConvert.SerializeObject(this));
-                
-                Changed = false;
-            }
-
-            internal byte[] ConsumeSerialized()
-            {
-                EnsureSerialized();
-
-                var s = _serializedContent;
-
-                _serializedContent = null;
-
-                return s;
-            }
-
-            internal bool Remove(TKey key)
-            {
-                var changed = Keys.Remove(key);
-                if (changed)
-                    Changed = true;
-                return changed;
-            }
-
-            internal bool Add(TKey key)
-            {
-                var changed = Keys.Add(key);
-                if (changed)
-                    Changed = true;
-                return changed;
-            }
-            
-        }
 
         public struct ValueEnvelope
         {
             public TValue Content;
             
-            public BucketInfo Bucket;
-
-            public KeyTypes Type { get => Bucket == null ? KeyTypes.Content : KeyTypes.IndexBucket; }
-
-
             public ValueEnvelope(TValue content)
             {
                 Content = content;
-                Bucket = null;
-                _serializedContent = null;
-                SerializedSize = 0;  
             }
-
-            public ValueEnvelope(BucketInfo bucket)
-            {
-                Content = default;
-                Bucket = bucket;
-                _serializedContent = null;
-                SerializedSize = 0;
-            }
-
-            byte[] _serializedContent;
-
-            public int SerializedSize { get; private set; }
-
-            internal void EnsureSerializedSize()
-            {
-                if (Type == KeyTypes.Content)
-                    EnsureSerialized();
-                else
-                    Bucket.EnsureSerializedSize();
-            }
-
-            internal void EnsureSerialized()
-            {
-                if (Type == KeyTypes.Content)
-                {
-                    if (_serializedContent == null)
-                    {
-                        if (Content is byte[] byteArray)
-                        {
-                            _serializedContent = byteArray;
-                        }
-                        else
-                        {
-                            _serializedContent = UTF8.GetBytes(JsonConvert.SerializeObject(Content));
-                        }
-                        SerializedSize = _serializedContent.Length;
-                    }
-                }
-                else
-                {
-                    Bucket.EnsureSerialized();
-                    SerializedSize = Bucket.SerializedSize;
-                }
-            }
-
-            internal byte[] ConsumeSerialized()
-            {
-                
-                if (Type == KeyTypes.Content)
-                {
-                    EnsureSerialized();
-
-                    var s = _serializedContent;
-
-                    _serializedContent = null;
-
-                    return s;
-                }
-                else
-                {
-                    return Bucket.ConsumeSerialized();
-                }
-            }
-
 
             internal bool SameSize(ref ValueEnvelope valueEnvelope)
             {
-                if (Type != valueEnvelope.Type)
-                    throw new Exception("Cross type update!!");
-
-                EnsureSerialized();
-                valueEnvelope.EnsureSerialized();
-
-                if (Type == KeyTypes.IndexBucket)
-                {
-                    var thisTileCount = Math.Ceiling((double)Bucket.SerializedSize / BucketInfo.PaddingSize);
-                    var otherTileCount = Math.Ceiling((double)valueEnvelope.Bucket.SerializedSize / BucketInfo.PaddingSize);
-
-                    if (otherTileCount == thisTileCount)
-                        return true;
-                }
-                else
-                {
-                    return valueEnvelope.SerializedSize == SerializedSize;   
-                }
-
                 return false;
             }
         }

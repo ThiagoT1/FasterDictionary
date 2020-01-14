@@ -38,11 +38,11 @@ namespace FasterDictionary.Tests
         [Theory]
         [InlineData(226, 1, CheckpointType.FoldOver)]  //OK
         [InlineData(227, 1, CheckpointType.FoldOver)]  //OK
-        [InlineData(50_000, 1, CheckpointType.FoldOver)]  //OK
+        [InlineData(200_000, 1, CheckpointType.FoldOver)]  //OK
         
         [InlineData(2832, 1, CheckpointType.Snapshot)] //OK
         [InlineData(2833, 1, CheckpointType.Snapshot)] //OK
-        [InlineData(50_000, 1, CheckpointType.Snapshot)] //OK
+        [InlineData(200_000, 1, CheckpointType.Snapshot)] //OK
         public async Task AddRestartGetValues(int loops, int step, CheckpointType checkpointType)
         {
             var options = GetOptions($"{nameof(AddRestartGetValues)}-{loops}");

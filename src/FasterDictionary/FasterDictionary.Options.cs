@@ -18,9 +18,9 @@ namespace FasterDictionary
 
             public static readonly Options Default = new Options()
             {
-                MemorySize = MemorySizes.MB256,
-                PageSize = MemorySizes.MB32,
-                SegmentSize = MemorySizes.MB64
+                MemorySize = MemorySizes.MB32,
+                PageSize = MemorySizes.MB8,
+                SegmentSize = MemorySizes.MB16
             };
 
 

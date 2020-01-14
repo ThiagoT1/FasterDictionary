@@ -229,9 +229,6 @@ namespace FasterDictionary
                     KVSession.CompletePending(true, true);
                     status = UnsafeContext.Consume(out outputEnvelope);
                 }
-
-                UpdateIndexBucket(job, true);
-
             }
             catch (Exception e)
             {
@@ -304,7 +301,6 @@ namespace FasterDictionary
             try
             {
                 KVSession.Upsert(ref keyEnvelope, ref valueEnvelope, Context.Empty, GetSerialNum());
-                UpdateIndexBucket(job);
             }
             catch (Exception e)
             {
@@ -316,41 +312,6 @@ namespace FasterDictionary
             }
         }
 
-        private void UpdateIndexBucket(Job job, bool remove = false)
-        {
-            var bucketId = _keyComparer.GetBucketId(job.Key);
-
-            if (!TryGetBucket(bucketId, out BucketInfo bucketInfo))
-            {
-                bucketInfo = new BucketInfo()
-                {
-                    Id = bucketId,
-                    Keys = new System.Collections.Generic.HashSet<TKey>(_keyComparer)
-                };
-            }
-
-            bool changed = false;
-
-            if (remove)
-            {
-                changed = bucketInfo.Remove(job.Key);
-            }
-            else
-            {
-                changed = bucketInfo.Add(job.Key);
-            }
-
-            if (changed)
-                SaveBucket(bucketId, bucketInfo);
-        }
-
-        private void SaveBucket(int bucketId, BucketInfo bucketInfo)
-        {
-            var keyEnvelope = new KeyEnvelope(bucketId);
-            var valueEnvelope = new ValueEnvelope(bucketInfo);
-            KVSession.Upsert(ref keyEnvelope, ref valueEnvelope, Context.Empty, GetSerialNum());
-            _keyComparer.Buckets[bucketId] = bucketInfo;
-        }
 
         enum JobTypes
         {
