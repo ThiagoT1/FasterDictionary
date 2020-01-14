@@ -18,13 +18,56 @@ namespace FasterDictionary
 
         class KeySerializer : BaseSerializer<KeyEnvelope, TKey>
         {
-            public override void Deserialize(ref KeyEnvelope obj) => Deserialize(ref obj.Content);
-            public override void Serialize(ref KeyEnvelope obj) => Serialize(ref obj.Content);
+            public override void Deserialize(ref KeyEnvelope obj)
+            {
+                var keyType = (KeyTypes)Reader.ReadByte();
+                if (keyType == KeyTypes.Content)
+                    Deserialize(ref obj.Content);
+                else
+                    Deserialize(ref obj.BucketId);
+            }
+
+            public override void Serialize(ref KeyEnvelope obj)
+            {
+                Writer.WriteByte((byte)obj.Type);
+                if (obj.Type == KeyTypes.Content)
+                    Serialize(ref obj.Content);
+                else
+                    Serialize(ref obj.BucketId);
+
+            }
         }
+
         class ValueSerializer : BaseSerializer<ValueEnvelope, TValue>
         {
-            public override void Deserialize(ref ValueEnvelope obj) => Deserialize(ref obj.Content);
-            public override void Serialize(ref ValueEnvelope obj) => Serialize(ref obj.Content);
+            public override void Deserialize(ref ValueEnvelope obj)
+            {
+                var keyType = (KeyTypes)Reader.ReadByte();
+                if (keyType == KeyTypes.Content)
+                    Deserialize(ref obj.Content);
+                else
+                    Deserialize(ref obj.Bucket);
+
+            }
+
+            public override void Serialize(ref ValueEnvelope obj)
+            {
+                Writer.WriteByte((byte)obj.Type);
+
+                if (obj.Type == KeyTypes.Content)
+                {
+                    var payload = obj.ConsumeSerialized();
+                    var size = payload.Length;
+
+
+                    Writer.WriteInt32(size);
+                    Writer.Write(payload, 0, payload.Length);
+                }
+                else
+                {
+                    Serialize(ref obj.Bucket);
+                }
+            }
         }
 
         abstract class BaseSerializer<TEnvelope, TContent> : IObjectSerializer<TEnvelope>
@@ -50,23 +93,85 @@ namespace FasterDictionary
 
             public virtual void Deserialize(ref TContent obj)
             {
-                int size = Reader.ReadInt();
+                int size = Reader.ReadInt32();
                 byte[] payload = new byte[size];
+
                 Reader.Read(payload, 0, payload.Length);
 
                 if (IsBytePayload)
                 {
                     obj = (TContent)(object)payload;
                 }
-                else if (IsIntPayload)
-                {
-                    obj = (TContent)(object)BitConverter.ToInt32(payload, 0);
-                }
                 else
                 {
                     obj = JsonConvert.DeserializeObject<TContent>(UTF8.GetString(payload));
                 }
             }
+
+
+            public virtual void Deserialize(ref int obj)
+            {
+                int size = Reader.ReadInt32();
+                byte[] payload = new byte[size];
+                Reader.Read(payload, 0, payload.Length);
+
+                obj = BitConverter.ToInt32(payload, 0);
+            }
+
+            public virtual void Deserialize(ref BucketInfo obj)
+            {
+                int size = Reader.ReadInt32();
+                byte[] payload = new byte[size];
+
+                Reader.Read(payload, 0, payload.Length);
+
+                obj = JsonConvert.DeserializeObject<BucketInfo>(UTF8.GetString(payload));
+
+                ComsumePadding(size, BucketInfo.PaddingSize);
+            }
+
+            private void ComsumePadding(int size, int paddingSize)
+            {
+                while (size > paddingSize)
+                    size -= paddingSize;
+
+                size = paddingSize - size;
+
+                Reader.Position += size;
+            }
+
+            public virtual void Serialize(ref BucketInfo content)
+            {
+                byte[] payload = content.ConsumeSerialized();
+
+                var size = payload.Length;
+
+                Writer.WriteInt32(size);
+                Writer.Write(payload, 0, payload.Length);
+
+                ProducePadding(size, BucketInfo.PaddingSize);
+            }
+
+            private void ProducePadding(int size, int paddingSize)
+            {
+                while (size > paddingSize)
+                    size -= paddingSize;
+
+                size = paddingSize - size;
+
+                while (size-- >= 0)
+                    Writer.WriteByte(0);
+            }
+
+            public virtual void Serialize(ref int content)
+            {
+                var payload = BitConverter.GetBytes(content);
+                var size = payload.Length;
+
+                Writer.WriteInt32(size);
+                Writer.Write(payload, 0, payload.Length);
+            }
+
             public virtual void Serialize(ref TContent content)
             {
                 int size = 0;
@@ -89,7 +194,7 @@ namespace FasterDictionary
                     size = payload.Length;
                 }
 
-                Writer.WriteInt(size);
+                Writer.WriteInt32(size);
                 Writer.Write(payload, 0, payload.Length);
             }
 

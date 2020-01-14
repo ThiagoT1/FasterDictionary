@@ -1,4 +1,5 @@
 using FASTER.core;
+using FasterDictionary.Tests.Util;
 using System;
 using System.IO;
 using System.Linq;
@@ -50,7 +51,7 @@ namespace FasterDictionary.Tests
             options.DeleteOnClose = false;
 
             FasterDictionary<int, string>.ReadResult result;
-            using (var dictionary = new FasterDictionary<int, string>(options))
+            using (var dictionary = new FasterDictionary<int, string>(TestHelper.GetKeyComparer<int>(), options))
             {
                 for (var i = 0; i < loops; i++)
                 {
@@ -72,7 +73,7 @@ namespace FasterDictionary.Tests
             }
 
             for (var k = 0; k < 3; k++)
-                using (var dictionary = new FasterDictionary<int, string>(options))
+                using (var dictionary = new FasterDictionary<int, string>(TestHelper.GetKeyComparer<int>(), options))
                 {
                     await dictionary.Ping();
 

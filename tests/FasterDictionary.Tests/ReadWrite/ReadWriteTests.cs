@@ -1,3 +1,4 @@
+using FasterDictionary.Tests.Util;
 using System;
 using System.IO;
 using System.Threading.Tasks;
@@ -41,7 +42,7 @@ namespace FasterDictionary.Tests
         public async Task AddGet(int loops, int step)
         {
             FasterDictionary<int, string>.ReadResult result;
-            using (var dictionary = new FasterDictionary<int, string>(GetOptions($"{nameof(AddGet)}-{loops}")))
+            using (var dictionary = new FasterDictionary<int, string>(TestHelper.GetKeyComparer<int>(), GetOptions($"{nameof(AddGet)}-{loops}")))
             {
                 for (var i = 0; i < loops; i++)
                     await dictionary.Upsert(i, (i + 1).ToString());
@@ -69,7 +70,7 @@ namespace FasterDictionary.Tests
         public async Task AddGetRemove(int loops, int step)
         {
             FasterDictionary<int, string>.ReadResult result;
-            using (var dictionary = new FasterDictionary<int, string>(GetOptions($"{nameof(AddGetRemove)}-{loops}")))
+            using (var dictionary = new FasterDictionary<int, string>(TestHelper.GetKeyComparer<int>(), GetOptions($"{nameof(AddGetRemove)}-{loops}")))
             {
                 for (var i = 0; i < loops; i++)
                     await dictionary.Upsert(i, (i + 1).ToString());

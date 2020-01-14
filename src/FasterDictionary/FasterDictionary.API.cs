@@ -26,11 +26,6 @@ namespace FasterDictionary
     public partial class FasterDictionary<TKey, TValue> : IDisposable
     {
        
-        public interface IKeyComparer
-        {
-
-        }
-
         public ValueTask<ReadResult> Ping()
         {
             return Enqueue(new Job(JobTypes.Ping));
