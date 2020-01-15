@@ -1,7 +1,10 @@
 ﻿using FASTER.core;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace FasterDictionary
 {
@@ -9,7 +12,7 @@ namespace FasterDictionary
 
 
 
-    public partial class FasterDictionary<TKey, TValue>
+    public partial class FasterDictionary<TKey, TValue> : IAsyncEnumerable<KeyValuePair<TKey, TValue>>
     {
 
         class KeyComparerAdapter : IFasterEqualityComparer<KeyEnvelope>, IEqualityComparer<TKey>
@@ -22,7 +25,7 @@ namespace FasterDictionary
             }
 
             IFasterEqualityComparer<TKey> _keyComparer;
-            
+
 
             public KeyComparerAdapter(IFasterEqualityComparer<TKey> keyComparer)
             {
@@ -31,7 +34,7 @@ namespace FasterDictionary
 
             public bool Equals(ref KeyEnvelope k1, ref KeyEnvelope k2)
             {
-                return _keyComparer.Equals(ref k1.Content, ref k2.Content); 
+                return _keyComparer.Equals(ref k1.Content, ref k2.Content);
             }
 
 
@@ -58,81 +61,213 @@ namespace FasterDictionary
         }
 
 
-        public void Compact(long untilAddress)
+
+        public IAsyncEnumerator<KeyValuePair<TKey, TValue>> GetAsyncEnumerator(CancellationToken cancellationToken = default)
         {
-            if (allocator is VariableLengthBlittableAllocator<Key, Value> varLen)
+            return new AsyncEnumerator(this);
+        }
+        class AsyncEnumerator : IAsyncEnumerator<KeyValuePair<TKey, TValue>>
+        {
+            FasterDictionary<TKey, TValue> _fasterDictionary;
+
+            public ValueTask StartTask { get; }
+
+            public AsyncEnumerator(FasterDictionary<TKey, TValue> fasterDictionary)
             {
-                var functions = new LogVariableCompactFunctions(varLen);
-                var variableLengthStructSettings = new VariableLengthStructSettings<Key, Value>
+                _fasterDictionary = fasterDictionary;
+                StartTask = _fasterDictionary.AquireIterator();
+            }
+
+            KeyValuePair<TKey, TValue> _current;
+            public KeyValuePair<TKey, TValue> Current => _current;
+
+            public ValueTask DisposeAsync()
+            {
+                return _fasterDictionary.ReleaseIterator();
+            }
+
+            public async ValueTask<bool> MoveNextAsync()
+            {
+                await StartTask;
+
+                _current = default;
+                var readResult = await _fasterDictionary.Iterate();
+                if (!readResult.Found)
+                    return false;
+
+                _current = new KeyValuePair<TKey, TValue>(readResult.Key, readResult.Value);
+                return true;
+            }
+        }
+
+        private class LogCompactFunctions : IFunctions<KeyEnvelope, byte, byte, byte, Context>
+        {
+            public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint) { }
+            public void ConcurrentReader(ref KeyEnvelope key, ref byte input, ref byte value, ref byte dst) { }
+            public bool ConcurrentWriter(ref KeyEnvelope key, ref byte src, ref byte dst) { dst = src; return true; }
+            public void CopyUpdater(ref KeyEnvelope key, ref byte input, ref byte oldValue, ref byte newValue) { }
+            public void InitialUpdater(ref KeyEnvelope key, ref byte input, ref byte value) { }
+            public bool InPlaceUpdater(ref KeyEnvelope key, ref byte input, ref byte value) { return true; }
+            public void ReadCompletionCallback(ref KeyEnvelope key, ref byte input, ref byte output, Context ctx, Status status) { }
+            public void RMWCompletionCallback(ref KeyEnvelope key, ref byte input, Context ctx, Status status) { }
+            public void SingleReader(ref KeyEnvelope key, ref byte input, ref byte value, ref byte dst) { }
+            public void SingleWriter(ref KeyEnvelope key, ref byte src, ref byte dst) { dst = src; }
+            public void UpsertCompletionCallback(ref KeyEnvelope key, ref byte value, Context ctx) { }
+            public void DeleteCompletionCallback(ref KeyEnvelope key, Context ctx) { }
+        }
+
+
+        //public void Compact(long untilAddress)
+        //{
+        //    if (allocator is VariableLengthBlittableAllocator<Key, Value> varLen)
+        //    {
+        //        var functions = new LogVariableCompactFunctions(varLen);
+        //        var variableLengthStructSettings = new VariableLengthStructSettings<Key, Value>
+        //        {
+        //            keyLength = varLen.KeyLength,
+        //            valueLength = varLen.ValueLength,
+        //        };
+
+        //        Compact(functions, untilAddress, variableLengthStructSettings);
+        //    }
+        //    else
+        //    {
+        //        Compact(new LogCompactFunctions(), untilAddress, null);
+        //    }
+        //}
+
+        
+
+        class IterationContextState : IDisposable
+        {
+            public LogCompactFunctions Functions;
+            public long UntilAddress;
+            public FasterKV<KeyEnvelope, byte, byte, byte, Context, LogCompactFunctions> TempKV;
+
+            public ClientSession<KeyEnvelope, byte, byte, byte, Context, LogCompactFunctions> KVSession;
+
+            public IFasterScanIterator<KeyEnvelope, byte> KeyIteration;
+
+            public void Dispose()
+            {
+                KVSession.Kill();
+                TempKV.Kill();
+            }
+        }
+
+        IterationContextState _iterationState;
+
+        private void ServeReleaseIterator(Job job)
+        {
+            _iterationState.Kill();
+            _iterationState = null;
+            job.Complete(false);
+        }
+
+        private void ServeIteration(Job job)
+        {
+            RecordInfo recordInfo;
+            try
+            {
+                tryAgain:
+
+                if (!_iterationState.KeyIteration.GetNext(out recordInfo))
                 {
-                    keyLength = varLen.KeyLength,
-                    valueLength = varLen.ValueLength,
+                    job.Complete(false);
+                    return;
+                }
+
+                if (recordInfo.Tombstone)
+                    goto tryAgain;
+
+                ref var key = ref _iterationState.KeyIteration.GetKey();
+                
+                job.Key = key.Content;
+
+                ServeGetContent(job);
+                
+                if (!job.AsyncOp.ValueTaskOfT.Result.Found)
+                    _options.Logger.Info($"Iterator Failed: NOTFOUND => {JsonConvert.SerializeObject(key)}");
+                
+            }
+            catch (Exception e)
+            {
+                job.Complete(e);
+            }
+        }
+
+        private void ServeAquireIterator(Job job)
+        {
+            if (_iterationState != null)
+            {
+                job.Complete(new Exception("Iteration already in progress"));
+                return;
+            }
+            try
+            {
+                _iterationState = new IterationContextState()
+                {
+                    Functions = new LogCompactFunctions(),
+                    UntilAddress = KV.Log.TailAddress
                 };
 
-                Compact(functions, untilAddress, variableLengthStructSettings);
+                _iterationState.TempKV = new FasterKV<KeyEnvelope, byte, byte, byte, Context, LogCompactFunctions>
+                    (KV.IndexSize, _iterationState.Functions, new LogSettings(), comparer: KV.Comparer, variableLengthStructSettings: null);
+
+                _iterationState.KVSession = _iterationState.TempKV.NewSession();
+
+                using (var iter1 = KV.Log.Scan(KV.Log.BeginAddress, KV.Log.TailAddress))
+                {
+                    byte stub = 0;
+                    while (iter1.GetNext(out RecordInfo recordInfo))
+                    {
+                        ref var key = ref iter1.GetKey();
+
+                        if (recordInfo.Tombstone)
+                            _iterationState.KVSession.Delete(ref key, default, 0);
+                        else
+                            _iterationState.KVSession.Upsert(ref key, ref stub, default, 0);
+                    }
+                }
+
+                // TODO: Scan until SafeReadOnlyAddress
+                long scanUntil = _iterationState.UntilAddress;
+                LogScanForValidity(ref _iterationState.UntilAddress, ref scanUntil, ref _iterationState.KVSession);
+
+                // Make sure key wasn't inserted between SafeReadOnlyAddress and TailAddress
+
+                _iterationState.KeyIteration = _iterationState.TempKV.Log.Scan
+                (
+                    _iterationState.TempKV.Log.BeginAddress,
+                    _iterationState.TempKV.Log.TailAddress
+                );
+
+
+                job.Complete(true);
             }
-            else
+            catch (Exception e)
             {
-                Compact(new LogCompactFunctions(), untilAddress, null);
+                job.Complete(e);
             }
         }
 
-        private void Compact<T>(T functions, long untilAddress, VariableLengthStructSettings<Key, Value> variableLengthStructSettings)
-            where T : IFunctions<Key, Value, Input, Output, Context>
+        private void LogScanForValidity<T>(ref long untilAddress, ref long scanUntil,
+            ref ClientSession<KeyEnvelope, byte, byte, byte, Context, T> tempKvSession)
+        where T : IFunctions<KeyEnvelope, byte, byte, byte, Context>
         {
-            var fhtSession = fht.NewSession();
-
-            var originalUntilAddress = untilAddress;
-
-            var tempKv = new FasterKV<Key, Value, Input, Output, Context, T>
-                (fht.IndexSize, functions, new LogSettings(), comparer: fht.Comparer, variableLengthStructSettings: variableLengthStructSettings);
-            var tempKvSession = tempKv.NewSession();
-
-            using (var iter1 = fht.Log.Scan(fht.Log.BeginAddress, untilAddress))
+            while (scanUntil < KV.Log.SafeReadOnlyAddress)
             {
-                while (iter1.GetNext(out RecordInfo recordInfo))
+                untilAddress = scanUntil;
+                scanUntil = KV.Log.SafeReadOnlyAddress;
+                using var iter2 = KV.Log.Scan(untilAddress, scanUntil);
+                while (iter2.GetNext(out RecordInfo recordInfo))
                 {
-                    ref var key = ref iter1.GetKey();
-                    ref var value = ref iter1.GetValue();
+                    ref var key = ref iter2.GetKey();
 
-                    if (recordInfo.Tombstone)
-                        tempKvSession.Delete(ref key, default, 0);
-                    else
-                        tempKvSession.Upsert(ref key, ref value, default, 0);
+                    tempKvSession.Delete(ref key, default, 0);
                 }
             }
-
-            // TODO: Scan until SafeReadOnlyAddress
-            long scanUntil = untilAddress;
-            LogScanForValidity(ref untilAddress, ref scanUntil, ref tempKvSession);
-
-            // Make sure key wasn't inserted between SafeReadOnlyAddress and TailAddress
-
-            using (var iter3 = tempKv.Log.Scan(tempKv.Log.BeginAddress, tempKv.Log.TailAddress))
-            {
-                while (iter3.GetNext(out RecordInfo recordInfo))
-                {
-                    ref var key = ref iter3.GetKey();
-                    ref var value = ref iter3.GetValue();
-
-                    if (!recordInfo.Tombstone)
-                    {
-                        if (fhtSession.ContainsKeyInMemory(ref key, scanUntil) == Status.NOTFOUND)
-                            fhtSession.Upsert(ref key, ref value, default, 0);
-                    }
-                    if (scanUntil < fht.Log.SafeReadOnlyAddress)
-                    {
-                        LogScanForValidity(ref untilAddress, ref scanUntil, ref tempKvSession);
-                    }
-                }
-            }
-            fhtSession.Dispose();
-            tempKvSession.Dispose();
-            tempKv.Dispose();
-
-            ShiftBeginAddress(originalUntilAddress);
         }
-
 
 
     }

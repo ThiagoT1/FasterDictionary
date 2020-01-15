@@ -162,6 +162,18 @@ namespace FasterDictionary
                     Task.Run(async () => await ServeSave(job)).Wait();
                     break;
 
+                case JobTypes.AquireIterator:
+                    ServeAquireIterator(job);
+                    break;
+
+                case JobTypes.ReleaseIterator:
+                    ServeReleaseIterator(job);
+                    break;
+
+                case JobTypes.Iterate:
+                    ServeIteration(job);
+                    break;
+
                 case JobTypes.Dispose:
                     ServeDispose(job);
                     break;
@@ -169,6 +181,8 @@ namespace FasterDictionary
 
 
         }
+
+        
 
         private async Task ServeSave(Job job)
         {
@@ -321,6 +335,9 @@ namespace FasterDictionary
             Get = 3,
             Ping = 4,
             Save = 5,
+            AquireIterator = 6,
+            Iterate = 7,
+            ReleaseIterator = 8,
             Dispose = 9
         }
         class Job
@@ -356,19 +373,21 @@ namespace FasterDictionary
                 JobType = type;
             }
 
-            public void Complete(bool found, TValue value = default) => AsyncOp?.TrySetResult(new ReadResult(found, value));
+            public void Complete(bool found, TValue value = default) => AsyncOp?.TrySetResult(new ReadResult(found, Key, value));
             public void Complete(Exception e) => AsyncOp?.TrySetException(e);
         }
 
         public readonly struct ReadResult
         {
+            public readonly TKey Key;
             public readonly TValue Value;
             public readonly bool Found;
 
 
-            public ReadResult(bool found, TValue value = default)
+            public ReadResult(bool found, TKey key = default, TValue value = default)
             {
                 Value = value;
+                Key = key;
                 Found = found;
             }
         }

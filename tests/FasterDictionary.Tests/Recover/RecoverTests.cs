@@ -36,6 +36,64 @@ namespace FasterDictionary.Tests
         }
 
         [Theory]
+
+        [InlineData(100, CheckpointType.Snapshot)]
+        [InlineData(100_000, CheckpointType.Snapshot)]
+        [InlineData(1_000_000, CheckpointType.Snapshot)]
+        [InlineData(2_000_000, CheckpointType.Snapshot)]
+        
+        [InlineData(100, CheckpointType.FoldOver)]
+        [InlineData(100_000, CheckpointType.FoldOver)]
+        [InlineData(1_000_000, CheckpointType.FoldOver)]
+        [InlineData(2_000_000, CheckpointType.FoldOver)]
+        
+        
+        //[InlineData(5_000_000)]
+        public async Task AddRestartIterate(int loops, CheckpointType checkpointType)
+        {
+            var options = GetOptions($"{nameof(AddRestartIterate)}-{loops}");
+
+            options.CheckPointType = checkpointType;
+            options.DeleteOnClose = false;
+
+            FasterDictionary<int, string>.ReadResult result;
+            using (var dictionary = new FasterDictionary<int, string>(TestHelper.GetKeyComparer<int>(), options))
+            {
+                for (var i = 0; i < loops; i++)
+                    await dictionary.Upsert(i, (i + 1).ToString());
+
+                await dictionary.Ping();
+
+                await dictionary.Save();
+            }
+
+            options.DeleteOnClose = true;
+
+            using (var dictionary = new FasterDictionary<int, string>(TestHelper.GetKeyComparer<int>(), options))
+            {
+                for (var i = 0; i < 100; i++)
+                {
+                    var guid = GetGuid(i);
+                    result = await dictionary.TryGet(i);
+                    Assert.True(result.Found);
+                    Assert.Equal((result.Key + 1).ToString(), result.Value);
+                }
+
+                var count = 0;
+                await foreach (var entry in dictionary)
+                {
+                    count++;
+                    Assert.Equal((entry.Key + 1).ToString(), entry.Value);
+                }
+
+                result = await dictionary.TryGet(loops);
+                Assert.False(result.Found);
+
+                Assert.Equal(loops, count);
+            }
+        }
+
+        [Theory]
         [InlineData(226, 1, CheckpointType.FoldOver)]  //OK
         [InlineData(227, 1, CheckpointType.FoldOver)]  //OK
         [InlineData(200_000, 1, CheckpointType.FoldOver)]  //OK

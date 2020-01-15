@@ -8,6 +8,17 @@ namespace FasterDictionary
 {
     public static class Utilities
     {
+
+        public static void Kill(this IDisposable disposable)
+        {
+            if (disposable == null)
+                return;
+            try
+            {
+                disposable.Dispose();
+            }
+            catch { }
+        }
         public static bool IsValueType<T>()
         {
             return typeof(T).IsValueType;

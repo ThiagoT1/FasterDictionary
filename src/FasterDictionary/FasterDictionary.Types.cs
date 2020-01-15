@@ -10,8 +10,9 @@ namespace FasterDictionary
    
     public partial class FasterDictionary<TKey, TValue>
     {
-        
-        
+
+        public struct StubEnvelope { }
+
         public struct KeyEnvelope
         {
             public TKey Content;
@@ -30,11 +31,6 @@ namespace FasterDictionary
             public ValueEnvelope(TValue content)
             {
                 Content = content;
-            }
-
-            internal bool SameSize(ref ValueEnvelope valueEnvelope)
-            {
-                return false;
             }
         }
 
@@ -90,8 +86,10 @@ namespace FasterDictionary
 
             public bool ConcurrentWriter(ref KeyEnvelope key, ref ValueEnvelope src, ref ValueEnvelope dst)
             {
-                if (!src.SameSize(ref dst))
-                    return false;
+                //return true;
+
+                //if (!src.SameSize(ref dst))
+                //    return false;
                 
                 dst = src;
                 return true;
@@ -99,8 +97,10 @@ namespace FasterDictionary
 
             public bool InPlaceUpdater(ref KeyEnvelope key, ref ValueEnvelope input, ref ValueEnvelope value)
             {
-                if (!value.SameSize(ref input))
-                    return false;
+                //return true;
+
+                //if (!value.SameSize(ref input))
+                //    return false;
 
                 value = input;
                 return true;

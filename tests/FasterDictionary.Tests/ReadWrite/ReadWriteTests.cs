@@ -61,6 +61,40 @@ namespace FasterDictionary.Tests
             }
         }
 
+
+        [Theory]
+        [InlineData(2)]
+        [InlineData(100)]
+        [InlineData(10_000)]
+        [InlineData(100_000)]
+        [InlineData(1_000_000)]
+        [InlineData(2_000_000)]
+        //        [InlineData(5_000_000)]
+        public async Task AddIterate(int loops)
+        {
+            FasterDictionary<int, string>.ReadResult result;
+            using (var dictionary = new FasterDictionary<int, string>(TestHelper.GetKeyComparer<int>(), GetOptions($"{nameof(AddIterate)}-{loops}")))
+            {
+                for (var i = 0; i < loops; i++)
+                    await dictionary.Upsert(i, (i + 1).ToString());
+
+                await dictionary.Ping();
+
+                var count = 0;
+                await foreach (var entry in dictionary)
+                {
+                    count++;
+                    Assert.Equal((entry.Key + 1).ToString(), entry.Value);
+                }
+
+                result = await dictionary.TryGet(loops);
+                Assert.False(result.Found);
+
+                Assert.Equal(loops, count);
+            }
+        }
+
+
         [Theory]
         [InlineData(2, 1)]
         [InlineData(100, 1)]
@@ -78,13 +112,13 @@ namespace FasterDictionary.Tests
                 await dictionary.Ping();
 
                 for (var i = 0; i < loops; i++)
-                    dictionary.Upsert(i, (i + 2).ToString()).Forget();
+                    dictionary.Upsert(i, (i + 10).ToString()).Forget();
 
                 for (var i = 0; i < loops; i += step)
                 {
                     result = await dictionary.TryGet(i);
                     Assert.True(result.Found);
-                    Assert.Equal((i + 2).ToString(), result.Value);
+                    Assert.Equal((i + 10).ToString(), result.Value);
                 }
 
                 await dictionary.Ping();

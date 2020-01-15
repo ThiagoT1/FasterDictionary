@@ -25,7 +25,22 @@ namespace FasterDictionary
 
     public partial class FasterDictionary<TKey, TValue> : IDisposable
     {
-       
+
+        private async ValueTask ReleaseIterator()
+        {
+            await Enqueue(new Job(JobTypes.ReleaseIterator));
+        }
+
+        private async ValueTask AquireIterator()
+        {
+            await Enqueue(new Job(JobTypes.AquireIterator));
+        }
+
+        private ValueTask<ReadResult> Iterate()
+        {
+            return Enqueue(new Job(JobTypes.Iterate));
+        }
+
         public ValueTask<ReadResult> Ping()
         {
             return Enqueue(new Job(JobTypes.Ping));
