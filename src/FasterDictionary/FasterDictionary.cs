@@ -85,7 +85,13 @@ namespace FasterDictionary
                 ObjectLogDevice = ObjectLog,
                 SegmentSizeBits = (int)_options.SegmentSize,
                 PageSizeBits = (int)_options.PageSize,
-                MemorySizeBits = (int)_options.MemorySize
+                MemorySizeBits = (int)_options.MemorySize,
+                ReadCacheSettings = new ReadCacheSettings()
+                {
+                    MemorySizeBits = (int)_options.MemorySize + 1,
+                    PageSizeBits = (int)_options.PageSize + 1,
+                    SecondChanceFraction = .2
+                }
             };
 
             var checkpointSettings = new CheckpointSettings()
@@ -287,6 +293,9 @@ namespace FasterDictionary
                     case Status.OK:
                         job.Complete(true, outputEnvelope.Content);
                         break;
+                    default:
+                        job.Complete(new Exception($"Read WTF => {status} - {JsonConvert.SerializeObject(job.Key)}"));
+                        break; 
                 }
             }
             catch (Exception e)

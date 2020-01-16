@@ -186,9 +186,6 @@ namespace FasterDictionary
 
                 ServeGetContent(job);
                 
-                if (!job.AsyncOp.ValueTaskOfT.Result.Found)
-                    _options.Logger.Info($"Iterator Failed: NOTFOUND => {JsonConvert.SerializeObject(key)}");
-                
             }
             catch (Exception e)
             {
