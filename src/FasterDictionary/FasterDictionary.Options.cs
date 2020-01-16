@@ -18,16 +18,16 @@ namespace FasterDictionary
 
             public static readonly Options Default = new Options()
             {
-                MemorySize = MemorySizes.MB16,
-                PageSize = MemorySizes.MB4,
-                SegmentSize = MemorySizes.MB8
+                MemorySize = MemorySizes.MB32,
+                PageSize = MemorySizes.MB8,
+                SegmentSize = MemorySizes.MB16
             };
 
 
             public string PersistDirectoryPath;
             public string DictionaryName;
 
-            public IKeyComparer KeyComparer;
+            
             public MemorySizes SegmentSize;
             public MemorySizes PageSize;
             public MemorySizes MemorySize;
@@ -40,6 +40,7 @@ namespace FasterDictionary
         }
 
         Options _options;
+        KeyComparerAdapter _keyComparer;
 
     }
 }

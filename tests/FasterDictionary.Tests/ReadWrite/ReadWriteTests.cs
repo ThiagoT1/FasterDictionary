@@ -1,3 +1,4 @@
+using FasterDictionary.Tests.Util;
 using System;
 using System.IO;
 using System.Threading.Tasks;
@@ -41,10 +42,10 @@ namespace FasterDictionary.Tests
         public async Task AddGet(int loops, int step)
         {
             FasterDictionary<int, string>.ReadResult result;
-            using (var dictionary = new FasterDictionary<int, string>(GetOptions($"{nameof(AddGet)}-{loops}")))
+            using (var dictionary = new FasterDictionary<int, string>(TestHelper.GetKeyComparer<int>(), GetOptions($"{nameof(AddGet)}-{loops}")))
             {
                 for (var i = 0; i < loops; i++)
-                    await dictionary.Upsert(i, (i + 1).ToString());
+                    dictionary.Upsert(i, (i + 1).ToString()).Dismiss();
 
                 await dictionary.Ping();
 
@@ -60,19 +61,89 @@ namespace FasterDictionary.Tests
             }
         }
 
+
+        [Theory]
+        [InlineData(2)]
+        [InlineData(100)]
+        [InlineData(10_000)]
+        [InlineData(100_000)]
+        [InlineData(1_000_000)]
+        [InlineData(2_000_000)]
+        //        [InlineData(5_000_000)]
+        public async Task AddIterate(int loops)
+        {
+            FasterDictionary<int, string>.ReadResult result;
+            using (var dictionary = new FasterDictionary<int, string>(TestHelper.GetKeyComparer<int>(), GetOptions($"{nameof(AddIterate)}-{loops}")))
+            {
+                for (var i = 0; i < loops; i++)
+                    dictionary.Upsert(i, (i + 1).ToString()).Dismiss();
+
+                await dictionary.Ping();
+
+                var count = 0;
+                await foreach (var entry in dictionary)
+                {
+                    count++;
+                    Assert.Equal((entry.Key + 1).ToString(), entry.Value);
+                }
+
+                result = await dictionary.TryGet(loops);
+                Assert.False(result.Found);
+
+                Assert.Equal(loops, count);
+            }
+        }
+
+
         [Theory]
         [InlineData(2, 1)]
         [InlineData(100, 1)]
         [InlineData(10_000, 1)]
         [InlineData(1_000_000, 4)]
-        [InlineData(2_500_000, 31)]
+        [InlineData(5_000_000, 31)]
+        public async Task AddUpdateGet(int loops, int step)
+        {
+            FasterDictionary<int, string>.ReadResult result;
+            using (var dictionary = new FasterDictionary<int, string>(TestHelper.GetKeyComparer<int>(), GetOptions($"{nameof(AddGet)}-{loops}")))
+            {
+                for (var i = 0; i < loops; i++)
+                    dictionary.Upsert(i, (i + 1).ToString()).Dismiss();
+
+                await dictionary.Ping();
+
+                for (var i = 0; i < loops; i++)
+                    dictionary.Upsert(i, (i + 10).ToString()).Dismiss();
+
+                await dictionary.Ping();
+
+                for (var i = 0; i < loops; i += step)
+                {
+                    result = await dictionary.TryGet(i);
+                    Assert.True(result.Found);
+                    Assert.Equal((i + 10).ToString(), result.Value);
+                }
+
+                await dictionary.Ping();
+
+
+                result = await dictionary.TryGet(loops);
+                Assert.False(result.Found);
+            }
+        }
+
+        [Theory]
+        [InlineData(2, 1)]
+        [InlineData(100, 1)]
+        [InlineData(10_000, 1)]
+        [InlineData(1_000_000, 4)]
+        [InlineData(5_000_000, 31)]
         public async Task AddGetRemove(int loops, int step)
         {
             FasterDictionary<int, string>.ReadResult result;
-            using (var dictionary = new FasterDictionary<int, string>(GetOptions($"{nameof(AddGetRemove)}-{loops}")))
+            using (var dictionary = new FasterDictionary<int, string>(TestHelper.GetKeyComparer<int>(), GetOptions($"{nameof(AddGetRemove)}-{loops}")))
             {
                 for (var i = 0; i < loops; i++)
-                    await dictionary.Upsert(i, (i + 1).ToString());
+                    dictionary.Upsert(i, (i + 1).ToString()).Dismiss();
 
                 await dictionary.Ping();
 

@@ -1,42 +1,37 @@
 ﻿using FASTER.core;
 using Newtonsoft.Json;
 using System;
+using System.Collections.Generic;
+using System.Text;
+
 namespace FasterDictionary
 {
+
+   
     public partial class FasterDictionary<TKey, TValue>
     {
+
+        public struct StubEnvelope { }
+
         public struct KeyEnvelope
         {
             public TKey Content;
+            
             public KeyEnvelope(TKey content)
             {
                 Content = content;
             }
         }
 
+
         public struct ValueEnvelope
         {
             public TValue Content;
-
+            
             public ValueEnvelope(TValue content)
             {
                 Content = content;
             }
-
-            internal bool SameSize(ref TValue content)
-            {
-                return false;
-            }
-        }
-
-        public struct InputEnvelope
-        {
-            public TValue Content;
-        }
-
-        public struct OutputEnvelope
-        {
-            public ValueEnvelope Content;
         }
 
         public class Context
@@ -44,15 +39,15 @@ namespace FasterDictionary
             public static Context Empty = new Context();
 
             Status Status = Status.NOTFOUND;
-            OutputEnvelope Value;
+            ValueEnvelope Value;
 
-            internal void CompleteRead(ref Status status, ref OutputEnvelope output)
+            internal void CompleteRead(ref Status status, ref ValueEnvelope output)
             {
                 Status = status;
                 Value = output;
             }
 
-            internal Status Consume(out OutputEnvelope output)
+            internal Status Consume(out ValueEnvelope output)
             {
                 output = Value;
                 Value = default;
@@ -70,7 +65,7 @@ namespace FasterDictionary
         }
 
 
-        public class Functions : IFunctions<KeyEnvelope, ValueEnvelope, InputEnvelope, OutputEnvelope, Context>
+        public class Functions : IFunctions<KeyEnvelope, ValueEnvelope, ValueEnvelope, ValueEnvelope, Context>
         {
             public Functions(ILogger logger)
             {
@@ -84,30 +79,34 @@ namespace FasterDictionary
                 Logger.Info(nameof(CheckpointCompletionCallback), $"SessionId: {sessionId}", $"CommitPoint: {JsonConvert.SerializeObject(commitPoint)}");
             }
 
-            public void ConcurrentReader(ref KeyEnvelope key, ref InputEnvelope input, ref ValueEnvelope value, ref OutputEnvelope dst)
+            public void ConcurrentReader(ref KeyEnvelope key, ref ValueEnvelope input, ref ValueEnvelope value, ref ValueEnvelope dst)
             {
-                dst.Content = value;
+                dst = value;
             }
 
             public bool ConcurrentWriter(ref KeyEnvelope key, ref ValueEnvelope src, ref ValueEnvelope dst)
             {
-                if (!src.SameSize(ref dst.Content))
-                    return false;
+                //return true;
+
+                //if (!src.SameSize(ref dst))
+                //    return false;
                 
                 dst = src;
                 return true;
             }
 
-            public bool InPlaceUpdater(ref KeyEnvelope key, ref InputEnvelope input, ref ValueEnvelope value)
+            public bool InPlaceUpdater(ref KeyEnvelope key, ref ValueEnvelope input, ref ValueEnvelope value)
             {
-                if (!value.SameSize(ref input.Content))
-                    return false;
+                //return true;
 
-                value.Content = input.Content;
+                //if (!value.SameSize(ref input))
+                //    return false;
+
+                value = input;
                 return true;
             }
 
-            public void CopyUpdater(ref KeyEnvelope key, ref InputEnvelope input, ref ValueEnvelope oldValue, ref ValueEnvelope newValue)
+            public void CopyUpdater(ref KeyEnvelope key, ref ValueEnvelope input, ref ValueEnvelope oldValue, ref ValueEnvelope newValue)
             {
                 newValue = oldValue;
             }
@@ -117,26 +116,26 @@ namespace FasterDictionary
                 Logger.Trace(nameof(DeleteCompletionCallback), $"Key: {key.Content}");
             }
 
-            public void InitialUpdater(ref KeyEnvelope key, ref InputEnvelope input, ref ValueEnvelope value)
+            public void InitialUpdater(ref KeyEnvelope key, ref ValueEnvelope input, ref ValueEnvelope value)
             {
-                value.Content = input.Content;
+                value = input;
             }
 
             
 
-            public void ReadCompletionCallback(ref KeyEnvelope key, ref InputEnvelope input, ref OutputEnvelope output, Context ctx, Status status)
+            public void ReadCompletionCallback(ref KeyEnvelope key, ref ValueEnvelope input, ref ValueEnvelope output, Context ctx, Status status)
             {
                 ctx.CompleteRead(ref status, ref output);
             }
 
-            public void RMWCompletionCallback(ref KeyEnvelope key, ref InputEnvelope input, Context ctx, Status status)
+            public void RMWCompletionCallback(ref KeyEnvelope key, ref ValueEnvelope input, Context ctx, Status status)
             {
                 Logger.Trace(nameof(RMWCompletionCallback), $"Key: {key.Content}");
             }
 
-            public void SingleReader(ref KeyEnvelope key, ref InputEnvelope input, ref ValueEnvelope value, ref OutputEnvelope dst)
+            public void SingleReader(ref KeyEnvelope key, ref ValueEnvelope input, ref ValueEnvelope value, ref ValueEnvelope dst)
             {
-                dst.Content = value;
+                dst = value;
             }
 
             public void SingleWriter(ref KeyEnvelope key, ref ValueEnvelope src, ref ValueEnvelope dst)
@@ -154,9 +153,9 @@ namespace FasterDictionary
         IDevice IndexLog;
         IDevice ObjectLog;
 
-        FasterKV<KeyEnvelope, ValueEnvelope, InputEnvelope, OutputEnvelope, Context, Functions> KV;
+        FasterKV<KeyEnvelope, ValueEnvelope, ValueEnvelope, ValueEnvelope, Context, Functions> KV;
 
-        ClientSession<KeyEnvelope, ValueEnvelope, InputEnvelope, OutputEnvelope, Context, Functions> KVSession;
+        ClientSession<KeyEnvelope, ValueEnvelope, ValueEnvelope, ValueEnvelope, Context, Functions> KVSession;
 
         Context UnsafeContext;
 
