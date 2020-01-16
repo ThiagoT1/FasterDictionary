@@ -59,7 +59,7 @@ namespace FasterDictionary.Tests
             using (var dictionary = new FasterDictionary<int, string>(TestHelper.GetKeyComparer<int>(), options))
             {
                 for (var i = 0; i < loops; i++)
-                    await dictionary.Upsert(i, (i + 1).ToString());
+                    dictionary.Upsert(i, (i + 1).ToString()).Dismiss();
 
                 await dictionary.Ping();
 
@@ -113,7 +113,7 @@ namespace FasterDictionary.Tests
                 for (var i = 0; i < loops; i++)
                 {
                     var guid = GetGuid(i);
-                    await dictionary.Upsert(i, guid);
+                    dictionary.Upsert(i, guid).Dismiss();
                 }
 
                 await dictionary.Ping();
@@ -166,7 +166,7 @@ namespace FasterDictionary.Tests
                 for (var i = 0; i < loops; i++)
                 {
                     var guid = GetGuid(i);
-                    await dictionary.Upsert(i, guid);
+                    dictionary.Upsert(i, guid).Dismiss();
                 }
 
                 await dictionary.Ping();
@@ -228,7 +228,7 @@ namespace FasterDictionary.Tests
             using (var dictionary = new FasterDictionary<int, string>(TestHelper.GetKeyComparer<int>(), options))
             {
                 for (var i = 0; i < loops; i++)
-                    await dictionary.Upsert(i, (i + 1).ToString());
+                    dictionary.Upsert(i, (i + 1).ToString()).Dismiss();
 
                 await dictionary.Ping();
 

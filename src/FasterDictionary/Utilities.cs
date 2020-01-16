@@ -23,11 +23,11 @@ namespace FasterDictionary
         {
             return typeof(T).IsValueType;
         }
-        public static void Forget(this Task task) { }
-        public static void Forget<T>(this Task<T> task) { }
+        public static void Dismiss(this Task task) { }
+        public static void Dismiss<T>(this Task<T> task) { }
 
-        public static void Forget(this ValueTask task) { }
-        public static void Forget<T>(this ValueTask<T> task) { }
+        public static void Dismiss(this ValueTask task) { }
+        public static void Dismiss<T>(this ValueTask<T> task) { }
         public static void WriteInt32(this Stream target, int value)
         {
             target.WriteByte((byte)(value >> 24));

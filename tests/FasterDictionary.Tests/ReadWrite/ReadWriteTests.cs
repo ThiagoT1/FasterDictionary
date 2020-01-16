@@ -45,7 +45,7 @@ namespace FasterDictionary.Tests
             using (var dictionary = new FasterDictionary<int, string>(TestHelper.GetKeyComparer<int>(), GetOptions($"{nameof(AddGet)}-{loops}")))
             {
                 for (var i = 0; i < loops; i++)
-                    await dictionary.Upsert(i, (i + 1).ToString());
+                    dictionary.Upsert(i, (i + 1).ToString()).Dismiss();
 
                 await dictionary.Ping();
 
@@ -76,7 +76,7 @@ namespace FasterDictionary.Tests
             using (var dictionary = new FasterDictionary<int, string>(TestHelper.GetKeyComparer<int>(), GetOptions($"{nameof(AddIterate)}-{loops}")))
             {
                 for (var i = 0; i < loops; i++)
-                    await dictionary.Upsert(i, (i + 1).ToString());
+                    dictionary.Upsert(i, (i + 1).ToString()).Dismiss();
 
                 await dictionary.Ping();
 
@@ -107,12 +107,14 @@ namespace FasterDictionary.Tests
             using (var dictionary = new FasterDictionary<int, string>(TestHelper.GetKeyComparer<int>(), GetOptions($"{nameof(AddGet)}-{loops}")))
             {
                 for (var i = 0; i < loops; i++)
-                    dictionary.Upsert(i, (i + 1).ToString()).Forget();
+                    dictionary.Upsert(i, (i + 1).ToString()).Dismiss();
 
                 await dictionary.Ping();
 
                 for (var i = 0; i < loops; i++)
-                    dictionary.Upsert(i, (i + 10).ToString()).Forget();
+                    dictionary.Upsert(i, (i + 10).ToString()).Dismiss();
+
+                await dictionary.Ping();
 
                 for (var i = 0; i < loops; i += step)
                 {
@@ -141,7 +143,7 @@ namespace FasterDictionary.Tests
             using (var dictionary = new FasterDictionary<int, string>(TestHelper.GetKeyComparer<int>(), GetOptions($"{nameof(AddGetRemove)}-{loops}")))
             {
                 for (var i = 0; i < loops; i++)
-                    await dictionary.Upsert(i, (i + 1).ToString());
+                    dictionary.Upsert(i, (i + 1).ToString()).Dismiss();
 
                 await dictionary.Ping();
 
