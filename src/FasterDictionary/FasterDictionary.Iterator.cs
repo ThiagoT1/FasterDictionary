@@ -159,6 +159,7 @@ namespace FasterDictionary
 
         private void ServeReleaseIterator(Job job)
         {
+            _iterationState?.KVSession.Kill();
             _iterationState.Kill();
             _iterationState = null;
             job.Complete(false);
