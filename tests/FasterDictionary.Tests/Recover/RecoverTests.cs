@@ -221,7 +221,7 @@ namespace FasterDictionary.Tests
                 await dictionary.Save();
             }
 
-            //options.DeleteOnClose = true;
+            options.DeleteOnClose = true;
 
             using (var dictionary = new FasterDictionary<int, string>(TestHelper.GetKeyComparer<int>(), options))
             {
