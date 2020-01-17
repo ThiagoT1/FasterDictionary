@@ -180,7 +180,8 @@ namespace FasterDictionary
                     break;
 
                 case JobTypes.Save:
-                    Task.Run(async () => await ServeSave(job)).Wait();
+                    if (StartSave(job, out Guid token))
+                        Task.Run(async () => await FinishServeSave(job, token)).Wait();
                     break;
 
                 case JobTypes.AquireIterator:
@@ -203,16 +204,27 @@ namespace FasterDictionary
 
         }
 
+        private bool StartSave(Job job, out Guid token)
+        {
+            token = default;
+            try
+            {
+                KV.TakeFullCheckpoint(out token);
+                return true;
 
+            }
+            catch (Exception e)
+            {
+                job.Complete(e);
+                return false;
+            }
+        }
 
-        private async Task ServeSave(Job job)
+        private async Task FinishServeSave(Job job, Guid token)
         {
             try
             {
 
-
-
-                KV.TakeFullCheckpoint(out Guid token);
                 await KV.CompleteCheckpointAsync();
 
                 var searchPath = Path.Combine(_options.PersistDirectoryPath, CheckPoints, IndexCheckPoints);
