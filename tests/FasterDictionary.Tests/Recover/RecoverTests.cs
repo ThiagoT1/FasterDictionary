@@ -92,6 +92,158 @@ namespace FasterDictionary.Tests
             }
         }
 
+
+
+
+        [Theory]
+
+        [InlineData(100, CheckpointType.Snapshot)]
+        [InlineData(100_000, CheckpointType.Snapshot)]
+        [InlineData(1_000_000, CheckpointType.Snapshot)]
+
+        [InlineData(100, CheckpointType.FoldOver)]
+        [InlineData(100_000, CheckpointType.FoldOver)]
+        [InlineData(1_000_000, CheckpointType.FoldOver)]
+
+
+        //[InlineData(5_000_000)]
+        public async Task AddIterateUpdateIterate(int loops, CheckpointType checkpointType)
+        {
+            var options = GetOptions($"{nameof(AddIterateUpdateIterate)}-{loops}");
+
+            options.CheckPointType = checkpointType;
+            options.DeleteOnClose = false;
+
+            FasterDictionary<int, string>.ReadResult result;
+            using (var dictionary = new FasterDictionary<int, string>(TestHelper.GetKeyComparer<int>(), options))
+            {
+                for (var i = 0; i < loops; i++)
+                    dictionary.Upsert(i, (i + 1).ToString()).Dismiss();
+
+                await dictionary.Ping();
+
+                await dictionary.Save();
+            }
+
+            using (var dictionary = new FasterDictionary<int, string>(TestHelper.GetKeyComparer<int>(), options))
+            {
+                for (var i = 0; i < 100; i++)
+                {
+                    var guid = GetGuid(i);
+                    result = await dictionary.TryGet(i);
+                    Assert.True(result.Found);
+                    Assert.Equal((result.Key + 1).ToString(), result.Value);
+                }
+
+                var count = 0;
+                await foreach (var entry in dictionary)
+                {
+                    count++;
+                    Assert.Equal((entry.Key + 1).ToString(), entry.Value);
+                }
+
+                result = await dictionary.TryGet(loops);
+                Assert.False(result.Found);
+
+                Assert.Equal(loops, count);
+            }
+
+            using (var dictionary = new FasterDictionary<int, string>(TestHelper.GetKeyComparer<int>(), options))
+            {
+                for (var i = 0; i < loops; i++)
+                    dictionary.Upsert(i, (i + 2).ToString()).Dismiss();
+
+                await dictionary.Ping();
+
+                await dictionary.Save();
+            }
+
+            options.DeleteOnClose = true;
+
+            using (var dictionary = new FasterDictionary<int, string>(TestHelper.GetKeyComparer<int>(), options))
+            {
+                for (var i = 0; i < 100; i++)
+                {
+                    var guid = GetGuid(i);
+                    result = await dictionary.TryGet(i);
+                    Assert.True(result.Found);
+                    Assert.Equal((result.Key + 2).ToString(), result.Value);
+                }
+
+                var count = 0;
+                await foreach (var entry in dictionary)
+                {
+                    count++;
+                    Assert.Equal((entry.Key + 2).ToString(), entry.Value);
+                }
+
+                result = await dictionary.TryGet(loops);
+                Assert.False(result.Found);
+
+                Assert.Equal(loops, count);
+            }
+        }
+
+        [Theory]
+
+        [InlineData(100, CheckpointType.Snapshot)]          //OK
+        [InlineData(100_000, CheckpointType.Snapshot)]      //OK
+        [InlineData(1_000_000, CheckpointType.Snapshot)]    //OK
+
+        [InlineData(100, CheckpointType.FoldOver)]          //FAIL
+        [InlineData(100_000, CheckpointType.FoldOver)]      //FAIL
+        [InlineData(1_000_000, CheckpointType.FoldOver)]    //FAIL
+
+        public async Task AddUpdateGet(int loops, CheckpointType checkpointType)
+        {
+            var options = GetOptions($"{nameof(AddIterateUpdateIterate)}-{loops}");
+
+            options.CheckPointType = checkpointType;
+            options.DeleteOnClose = false;
+
+            FasterDictionary<int, string>.ReadResult result;
+            using (var dictionary = new FasterDictionary<int, string>(TestHelper.GetKeyComparer<int>(), options))
+            {
+                for (var i = 0; i < loops; i++)
+                    dictionary.Upsert(i, (i + 1).ToString()).Dismiss();
+
+
+                await dictionary.Save();
+            }
+
+
+            using (var dictionary = new FasterDictionary<int, string>(TestHelper.GetKeyComparer<int>(), options))
+            {
+                for (var i = 0; i < loops; i++)
+                    dictionary.Upsert(i, (i + 2).ToString()).Dismiss();
+
+
+                await dictionary.Save();
+            }
+
+            options.DeleteOnClose = true;
+
+            using (var dictionary = new FasterDictionary<int, string>(TestHelper.GetKeyComparer<int>(), options))
+            {
+                for (var i = 0; i < 100; i++)
+                {
+                    var guid = GetGuid(i);
+                    result = await dictionary.TryGet(i);
+                    Assert.True(result.Found);
+                    Assert.Equal((result.Key + 2).ToString(), result.Value);
+                }
+
+                result = await dictionary.TryGet(loops);
+                Assert.False(result.Found);
+
+            }
+        }
+
+
+
+
+
+
         [Theory]
         [InlineData(226, 1, CheckpointType.FoldOver)]  //OK
         [InlineData(227, 1, CheckpointType.FoldOver)]  //OK
@@ -219,7 +371,7 @@ namespace FasterDictionary.Tests
         //[InlineData(5_000_000)]
         public async Task AddRestartIterateMany(int loops, int rcovrCount, int iteratCnt, CheckpointType checkType)
         {
-            var options = GetOptions($"{nameof(AddRestartIterateOnce)}-{loops}");
+            var options = GetOptions($"{nameof(AddRestartIterateMany)}-{loops}");
 
             options.CheckPointType = checkType;
             options.DeleteOnClose = false;

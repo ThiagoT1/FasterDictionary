@@ -1,8 +1,10 @@
 ﻿using FASTER.core;
-using Newtonsoft.Json;
 using System;
 using System.Collections.Concurrent;
 using System.IO;
+using System.Linq;
+using System.Runtime.ExceptionServices;
+using System.Text.Json;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using System.Threading.Tasks.Sources;
@@ -55,83 +57,96 @@ namespace FasterDictionary
 
         Channel<Job> JobQueue;
         Task JobConsumerTask;
+        ExceptionDispatchInfo ExceptionInfo;
 
         private void StartConsumer()
         {
             JobConsumerTask = Task.Factory.StartNew(ConsumeJobs, TaskCreationOptions.LongRunning);
         }
 
+        const string CheckPoints = nameof(CheckPoints);
+
+        const string CprCheckPoints = "cpr-checkpoints";
+        const string IndexCheckPoints = "index-checkpoints";
+
+        const string Logs = nameof(Logs);
+
         private async Task ConsumeJobs()
         {
-            var functions = new Functions(_options.Logger);
-
-            var checkpointDir = Path.Combine(_options.PersistDirectoryPath, "CheckPoints");
-            var logDir = Path.Combine(_options.PersistDirectoryPath, "Logs");
-
-            Directory.CreateDirectory(logDir);
-            Directory.CreateDirectory(checkpointDir);
-
-            var indexLogPath = Path.Combine(logDir, $"{_options.DictionaryName}-index.log");
-            var objectLogPath = Path.Combine(logDir, $"{_options.DictionaryName}-object.log");
-
-            IndexLog = Devices.CreateLogDevice(indexLogPath, true, _options.DeleteOnClose, -1, true);
-            ObjectLog = Devices.CreateLogDevice(objectLogPath, true, _options.DeleteOnClose, -1, true);
-
-            UnsafeContext = new Context();
-
-            Log = new LogSettings
+            try
             {
-                LogDevice = IndexLog,
-                ObjectLogDevice = ObjectLog,
-                SegmentSizeBits = (int)_options.SegmentSize,
-                PageSizeBits = (int)_options.PageSize,
-                MemorySizeBits = (int)_options.MemorySize,
-                ReadCacheSettings = new ReadCacheSettings()
+
+                var functions = new Functions(_options.Logger);
+
+                var checkpointDir = Path.Combine(_options.PersistDirectoryPath, CheckPoints);
+                var logDir = Path.Combine(_options.PersistDirectoryPath, Logs);
+
+                Directory.CreateDirectory(logDir);
+                Directory.CreateDirectory(checkpointDir);
+
+                var indexLogPath = Path.Combine(logDir, $"{_options.DictionaryName}-index.log");
+                var objectLogPath = Path.Combine(logDir, $"{_options.DictionaryName}-object.log");
+
+                IndexLog = Devices.CreateLogDevice(indexLogPath, true, _options.DeleteOnClose, -1, true);
+                ObjectLog = Devices.CreateLogDevice(objectLogPath, true, _options.DeleteOnClose, -1, true);
+
+                UnsafeContext = new Context();
+
+                Log = new LogSettings
                 {
-                    MemorySizeBits = (int)_options.MemorySize + 1,
-                    PageSizeBits = (int)_options.PageSize + 1,
-                    SecondChanceFraction = .2
-                }
-            };
-
-            var checkpointSettings = new CheckpointSettings()
-            {
-                CheckpointDir = checkpointDir,
-                CheckPointType = _options.CheckPointType
-            };
-
-            KV = new FasterKV
-                <KeyEnvelope, ValueEnvelope, ValueEnvelope, ValueEnvelope, Context, Functions>(
-                    1L << 20, functions,
-                    Log,
-                    checkpointSettings,
-                    new SerializerSettings<KeyEnvelope, ValueEnvelope>
+                    LogDevice = IndexLog,
+                    ObjectLogDevice = ObjectLog,
+                    SegmentSizeBits = (int)_options.SegmentSize,
+                    PageSizeBits = (int)_options.PageSize,
+                    MemorySizeBits = (int)_options.MemorySize,
+                    ReadCacheSettings = new ReadCacheSettings()
                     {
-                        keySerializer = () => new KeySerializer(),
-                        valueSerializer = () => new ValueSerializer()
-                    },
-                    _keyComparer
-                );
+                        MemorySizeBits = (int)_options.MemorySize + 1,
+                        PageSizeBits = (int)_options.PageSize + 1,
+                        SecondChanceFraction = .2
+                    }
+                };
 
-            var logCount = Directory.GetDirectories(checkpointDir).Length;
-            if (logCount > 0)
-                KV.Recover();
-
-            KVSession = KV.NewSession();
-
-            var reader = JobQueue.Reader;
-
-            while (await reader.WaitToReadAsync())
-            {
-                while (reader.TryRead(out Job item))
+                var checkpointSettings = new CheckpointSettings()
                 {
-                    ServeJob(item);
-                    if (item.JobType == JobTypes.Dispose)
-                        return;
+                    CheckpointDir = checkpointDir,
+                    CheckPointType = _options.CheckPointType
+                };
+
+                KV = new FasterKV
+                    <KeyEnvelope, ValueEnvelope, ValueEnvelope, ValueEnvelope, Context, Functions>(
+                        1L << 20, functions,
+                        Log,
+                        checkpointSettings,
+                        new SerializerSettings<KeyEnvelope, ValueEnvelope>
+                        {
+                            keySerializer = () => new KeySerializer(),
+                            valueSerializer = () => new ValueSerializer()
+                        },
+                        _keyComparer
+                    );
+
+                var logCount = Directory.GetDirectories(checkpointDir).Length;
+                if (logCount > 0)
+                    KV.Recover();
+
+                KVSession = KV.NewSession();
+
+                var reader = JobQueue.Reader;
+
+                while (await reader.WaitToReadAsync())
+                {
+                    while (reader.TryRead(out Job item))
+                    {
+                        ServeJob(item);
+                        if (item.JobType == JobTypes.Dispose)
+                            return;
+                    }
                 }
-
-
-
+            }
+            catch (Exception e)
+            {
+                ExceptionInfo = ExceptionDispatchInfo.Capture(e);
             }
         }
 
@@ -165,7 +180,8 @@ namespace FasterDictionary
                     break;
 
                 case JobTypes.Save:
-                    Task.Run(async () => await ServeSave(job)).Wait();
+                    if (StartSave(job, out Guid token))
+                        Task.Run(async () => await FinishServeSave(job, token)).Wait();
                     break;
 
                 case JobTypes.AquireIterator:
@@ -188,16 +204,49 @@ namespace FasterDictionary
 
         }
 
-        
+        private bool StartSave(Job job, out Guid token)
+        {
+            token = default;
+            try
+            {
+                KV.TakeFullCheckpoint(out token);
+                return true;
 
-        private async Task ServeSave(Job job)
+            }
+            catch (Exception e)
+            {
+                job.Complete(e);
+                return false;
+            }
+        }
+
+        private async Task FinishServeSave(Job job, Guid token)
         {
             try
             {
-                //KV.Log.FlushAndEvict(true);
 
-                KV.TakeFullCheckpoint(out Guid token);
                 await KV.CompleteCheckpointAsync();
+
+                var searchPath = Path.Combine(_options.PersistDirectoryPath, CheckPoints, IndexCheckPoints);
+
+                string[] currentShots = null;
+
+                
+                if (_options.CheckPointType == CheckpointType.Snapshot && Directory.Exists(searchPath))
+                {
+                    currentShots = Directory
+                        .GetDirectories(searchPath)
+                        .Select(x => Path.GetFileName(x))
+                        .Where(x => x != token.ToString())
+                        .ToArray();
+                }
+
+                if (currentShots != null)
+                    foreach (var currentShot in currentShots)
+                    {
+                        Directory.Delete(Path.Combine(_options.PersistDirectoryPath, CheckPoints, CprCheckPoints, currentShot), true);
+                        Directory.Delete(Path.Combine(_options.PersistDirectoryPath, CheckPoints, IndexCheckPoints, currentShot), true);
+                    }
 
                 job.Complete(false);
 
@@ -258,7 +307,7 @@ namespace FasterDictionary
             switch (status)
             {
                 case Status.ERROR:
-                    job.Complete(new Exception($"read error => {JsonConvert.SerializeObject(job.Key)}"));
+                    job.Complete(new Exception($"read error => {JsonSerializer.Serialize(job.Key)}"));
                     break;
                 case Status.NOTFOUND:
                     job.Complete(false);
@@ -285,7 +334,7 @@ namespace FasterDictionary
                 switch (status)
                 {
                     case Status.ERROR:
-                        job.Complete(new Exception($"read error => {JsonConvert.SerializeObject(job.Key)}"));
+                        job.Complete(new Exception($"read error => {JsonSerializer.Serialize(job.Key)}"));
                         break;
                     case Status.NOTFOUND:
                         job.Complete(false);
@@ -294,8 +343,8 @@ namespace FasterDictionary
                         job.Complete(true, outputEnvelope.Content);
                         break;
                     default:
-                        job.Complete(new Exception($"Read WTF => {status} - {JsonConvert.SerializeObject(job.Key)}"));
-                        break; 
+                        job.Complete(new Exception($"Read WTF => {status} - {JsonSerializer.Serialize(job.Key)}"));
+                        break;
                 }
             }
             catch (Exception e)
@@ -404,6 +453,9 @@ namespace FasterDictionary
 
         private ValueTask<ReadResult> Enqueue(Job job)
         {
+            if (ExceptionInfo != null)
+                ExceptionInfo.Throw();
+
             JobQueue.Writer.TryWrite(job);
             if (job.AsyncOp == null)
                 return new ValueTask<ReadResult>(default(ReadResult));

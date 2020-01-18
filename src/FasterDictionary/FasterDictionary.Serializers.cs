@@ -1,9 +1,9 @@
 ﻿using FASTER.core;
-using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace FasterDictionary
@@ -11,9 +11,14 @@ namespace FasterDictionary
     public partial class FasterDictionary<TKey, TValue>
     {
         static UTF8Encoding UTF8;
+        static JsonSerializerOptions JsonOptions;
         static FasterDictionary()
         {
             UTF8 = new UTF8Encoding(false);
+            JsonOptions = new JsonSerializerOptions()
+            {
+                IgnoreNullValues = true
+            };
         }
 
         class KeySerializer : BaseSerializer<KeyEnvelope, TKey>
@@ -80,7 +85,7 @@ namespace FasterDictionary
                 }
                 else
                 {
-                    obj = JsonConvert.DeserializeObject<TContent>(UTF8.GetString(payload));
+                    obj = JsonSerializer.Deserialize<TContent>(new ReadOnlySpan<byte>(payload), JsonOptions);
                 }
             }
 
@@ -142,7 +147,7 @@ namespace FasterDictionary
                 }
                 else
                 {
-                    payload = UTF8.GetBytes(JsonConvert.SerializeObject(content));
+                    payload = JsonSerializer.SerializeToUtf8Bytes(content, JsonOptions);
                     size = payload.Length;
                 }
 

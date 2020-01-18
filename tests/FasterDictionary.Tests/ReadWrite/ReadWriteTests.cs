@@ -38,7 +38,7 @@ namespace FasterDictionary.Tests
         [InlineData(100, 1)]
         [InlineData(10_000, 1)]
         [InlineData(1_000_000, 4)]
-        [InlineData(5_000_000, 31)]
+        [InlineData(3_000_000, 31)]
         public async Task AddGet(int loops, int step)
         {
             FasterDictionary<int, string>.ReadResult result;
@@ -68,7 +68,7 @@ namespace FasterDictionary.Tests
         [InlineData(10_000)]
         [InlineData(100_000)]
         [InlineData(1_000_000)]
-        [InlineData(2_000_000)]
+        [InlineData(1_500_000)]
         //        [InlineData(5_000_000)]
         public async Task AddIterate(int loops)
         {
@@ -100,7 +100,7 @@ namespace FasterDictionary.Tests
         [InlineData(100, 1)]
         [InlineData(10_000, 1)]
         [InlineData(1_000_000, 4)]
-        [InlineData(5_000_000, 31)]
+        [InlineData(3_000_000, 31)]
         public async Task AddUpdateGet(int loops, int step)
         {
             FasterDictionary<int, string>.ReadResult result;
@@ -136,7 +136,7 @@ namespace FasterDictionary.Tests
         [InlineData(100, 1)]
         [InlineData(10_000, 1)]
         [InlineData(1_000_000, 4)]
-        [InlineData(5_000_000, 31)]
+        [InlineData(3_000_000, 31)]
         public async Task AddGetRemove(int loops, int step)
         {
             FasterDictionary<int, string>.ReadResult result;

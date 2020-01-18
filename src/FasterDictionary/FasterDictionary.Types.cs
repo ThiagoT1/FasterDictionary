@@ -1,8 +1,8 @@
 ﻿using FASTER.core;
-using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Text.Json;
 
 namespace FasterDictionary
 {
@@ -76,7 +76,7 @@ namespace FasterDictionary
 
             public void CheckpointCompletionCallback(string sessionId, CommitPoint commitPoint)
             {
-                Logger.Info(nameof(CheckpointCompletionCallback), $"SessionId: {sessionId}", $"CommitPoint: {JsonConvert.SerializeObject(commitPoint)}");
+                Logger.Info(nameof(CheckpointCompletionCallback), $"SessionId: {sessionId}", $"CommitPoint: {JsonSerializer.Serialize(commitPoint)}");
             }
 
             public void ConcurrentReader(ref KeyEnvelope key, ref ValueEnvelope input, ref ValueEnvelope value, ref ValueEnvelope dst)
