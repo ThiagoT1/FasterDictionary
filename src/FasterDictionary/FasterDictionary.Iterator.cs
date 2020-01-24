@@ -59,7 +59,56 @@ namespace FasterDictionary
 
         }
 
+        public IAsyncEnumerable<TKey> AsKeysIterator() => new KeyIterator(this);
 
+        class KeyIterator : IAsyncEnumerable<TKey>
+        {
+            FasterDictionary<TKey, TValue> _fasterDictionary;
+            public KeyIterator(FasterDictionary<TKey, TValue> fasterDictionary)
+            {
+                _fasterDictionary = fasterDictionary;
+            }
+
+            public IAsyncEnumerator<TKey> GetAsyncEnumerator(CancellationToken cancellationToken = default)
+            {
+                return new KeyAsyncEnumerator(_fasterDictionary);
+            }
+
+            class KeyAsyncEnumerator : IAsyncEnumerator<TKey>
+            {
+                FasterDictionary<TKey, TValue> _fasterDictionary;
+
+                public ValueTask StartTask { get; }
+
+                public KeyAsyncEnumerator(FasterDictionary<TKey, TValue> fasterDictionary)
+                {
+                    _fasterDictionary = fasterDictionary;
+                    StartTask = _fasterDictionary.AquireIterator();
+                }
+
+                TKey _current;
+                public TKey Current => _current;
+
+                public ValueTask DisposeAsync()
+                {
+                    return _fasterDictionary.ReleaseIterator();
+                }
+
+                public async ValueTask<bool> MoveNextAsync()
+                {
+                    await StartTask;
+
+                    _current = default;
+                    var readResult = await _fasterDictionary.IteratePair();
+                    if (!readResult.Found)
+                        return false;
+
+                    _current = readResult.Key;
+                    return true;
+                }
+            }
+
+        }
 
         public IAsyncEnumerator<KeyValuePair<TKey, TValue>> GetAsyncEnumerator(CancellationToken cancellationToken = default)
         {
@@ -90,7 +139,7 @@ namespace FasterDictionary
                 await StartTask;
 
                 _current = default;
-                var readResult = await _fasterDictionary.Iterate();
+                var readResult = await _fasterDictionary.IteratePair();
                 if (!readResult.Found)
                     return false;
 
@@ -115,25 +164,6 @@ namespace FasterDictionary
             public void DeleteCompletionCallback(ref KeyEnvelope key, Context ctx) { }
         }
 
-
-        //public void Compact(long untilAddress)
-        //{
-        //    if (allocator is VariableLengthBlittableAllocator<Key, Value> varLen)
-        //    {
-        //        var functions = new LogVariableCompactFunctions(varLen);
-        //        var variableLengthStructSettings = new VariableLengthStructSettings<Key, Value>
-        //        {
-        //            keyLength = varLen.KeyLength,
-        //            valueLength = varLen.ValueLength,
-        //        };
-
-        //        Compact(functions, untilAddress, variableLengthStructSettings);
-        //    }
-        //    else
-        //    {
-        //        Compact(new LogCompactFunctions(), untilAddress, null);
-        //    }
-        //}
 
         
 
@@ -164,7 +194,37 @@ namespace FasterDictionary
             job.Complete(false);
         }
 
-        private void ServeIteration(Job job)
+        private void ServeKeyIteration(Job job)
+        {
+            RecordInfo recordInfo;
+            try
+            {
+            
+            tryAgain:
+
+                if (!_iterationState.KeyIteration.GetNext(out recordInfo))
+                {
+                    job.Complete(false);
+                    return;
+                }
+
+                if (recordInfo.Tombstone)
+                    goto tryAgain;
+
+                ref var key = ref _iterationState.KeyIteration.GetKey();
+
+                job.Key = key.Content;
+
+                job.Complete(true);
+
+            }
+            catch (Exception e)
+            {
+                job.Complete(e);
+            }
+        }
+
+        private void ServePairIteration(Job job)
         {
             RecordInfo recordInfo;
             try

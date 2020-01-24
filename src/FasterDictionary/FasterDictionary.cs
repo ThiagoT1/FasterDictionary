@@ -192,8 +192,12 @@ namespace FasterDictionary
                     ServeReleaseIterator(job);
                     break;
 
-                case JobTypes.Iterate:
-                    ServeIteration(job);
+                case JobTypes.IterateKey:
+                    ServeKeyIteration(job);
+                    break;
+
+                case JobTypes.IteratePair:
+                    ServePairIteration(job);
                     break;
 
                 case JobTypes.Dispose:
@@ -394,9 +398,10 @@ namespace FasterDictionary
             Ping = 4,
             Save = 5,
             AquireIterator = 6,
-            Iterate = 7,
-            ReleaseIterator = 8,
-            Dispose = 9
+            IteratePair = 7,
+            IterateKey = 8,
+            ReleaseIterator = 9,
+            Dispose = 10
         }
         class Job
         {
