@@ -36,9 +36,14 @@ namespace FasterDictionary
             await Enqueue(new Job(JobTypes.AquireIterator));
         }
 
-        private ValueTask<ReadResult> Iterate()
+        private ValueTask<ReadResult> IterateKey()
         {
-            return Enqueue(new Job(JobTypes.Iterate));
+            return Enqueue(new Job(JobTypes.IterateKey));
+        }
+
+        private ValueTask<ReadResult> IteratePair()
+        {
+            return Enqueue(new Job(JobTypes.IteratePair));
         }
 
         public ValueTask<ReadResult> Ping()

@@ -125,17 +125,16 @@ namespace FasterDictionary.Tests
                 await dictionary.Save();
             }
 
+            var count = 0;
             using (var dictionary = new FasterDictionary<int, string>(TestHelper.GetKeyComparer<int>(), options))
             {
                 for (var i = 0; i < 100; i++)
                 {
-                    var guid = GetGuid(i);
                     result = await dictionary.TryGet(i);
                     Assert.True(result.Found);
                     Assert.Equal((result.Key + 1).ToString(), result.Value);
                 }
 
-                var count = 0;
                 await foreach (var entry in dictionary)
                 {
                     count++;
@@ -148,10 +147,21 @@ namespace FasterDictionary.Tests
                 Assert.Equal(loops, count);
             }
 
+            count = 0;
             using (var dictionary = new FasterDictionary<int, string>(TestHelper.GetKeyComparer<int>(), options))
             {
                 for (var i = 0; i < loops; i++)
-                    dictionary.Upsert(i, (i + 2).ToString()).Dismiss();
+                {
+                    if (i % 4 == 0)
+                    {
+                        dictionary.Remove(i).Dismiss();
+                    }
+                    else
+                    {
+                        count++;
+                        dictionary.Upsert(i, (i + 2).ToString()).Dismiss();
+                    }
+                }
 
                 await dictionary.Ping();
 
@@ -162,19 +172,85 @@ namespace FasterDictionary.Tests
 
             using (var dictionary = new FasterDictionary<int, string>(TestHelper.GetKeyComparer<int>(), options))
             {
+
                 for (var i = 0; i < 100; i++)
                 {
-                    var guid = GetGuid(i);
+
                     result = await dictionary.TryGet(i);
-                    Assert.True(result.Found);
-                    Assert.Equal((result.Key + 2).ToString(), result.Value);
+
+                    if (i % 4 == 0)
+                    {
+                        Assert.False(result.Found);
+                    }
+                    else
+                    {
+                        Assert.True(result.Found);
+                        Assert.Equal((result.Key + 2).ToString(), result.Value);
+                    }
                 }
 
-                var count = 0;
+                var loopCount = 0;
+
                 await foreach (var entry in dictionary)
                 {
-                    count++;
+                    loopCount++;
+                    Assert.False(entry.Key % 4 == 0);
                     Assert.Equal((entry.Key + 2).ToString(), entry.Value);
+                }
+
+                result = await dictionary.TryGet(loops);
+                Assert.False(result.Found);
+
+                Assert.Equal(loopCount, count);
+            }
+        }
+
+
+
+
+        [Theory]
+
+        [InlineData(100, CheckpointType.Snapshot)]
+        [InlineData(100_000, CheckpointType.Snapshot)]
+        [InlineData(1_000_000, CheckpointType.Snapshot)]
+
+        [InlineData(100, CheckpointType.FoldOver)]
+        [InlineData(100_000, CheckpointType.FoldOver)]
+        [InlineData(1_000_000, CheckpointType.FoldOver)]
+
+
+        //[InlineData(5_000_000)]
+        public async Task AddIterateUpdateIterateKeys(int loops, CheckpointType checkpointType)
+        {
+            var options = GetOptions($"{nameof(AddIterateUpdateIterate)}-{loops}");
+
+            options.CheckPointType = checkpointType;
+            options.DeleteOnClose = false;
+
+            FasterDictionary<int, string>.ReadResult result;
+            using (var dictionary = new FasterDictionary<int, string>(TestHelper.GetKeyComparer<int>(), options))
+            {
+                for (var i = 0; i < loops; i++)
+                    dictionary.Upsert(i, (i + 1).ToString()).Dismiss();
+
+                await dictionary.Ping();
+
+                await dictionary.Save();
+            }
+
+            var count = 0;
+            using (var dictionary = new FasterDictionary<int, string>(TestHelper.GetKeyComparer<int>(), options))
+            {
+                for (var i = 0; i < 100; i++)
+                {
+                    result = await dictionary.TryGet(i);
+                    Assert.True(result.Found);
+                    Assert.Equal((result.Key + 1).ToString(), result.Value);
+                }
+
+                await foreach (var entry in dictionary.AsKeysIterator())
+                {
+                    count++;
                 }
 
                 result = await dictionary.TryGet(loops);
@@ -182,7 +258,69 @@ namespace FasterDictionary.Tests
 
                 Assert.Equal(loops, count);
             }
+
+            count = 0;
+            using (var dictionary = new FasterDictionary<int, string>(TestHelper.GetKeyComparer<int>(), options))
+            {
+                for (var i = 0; i < loops; i++)
+                {
+                    if (i % 4 == 0)
+                    {
+                        dictionary.Remove(i).Dismiss();
+                    }
+                    else
+                    {
+                        count++;
+                        dictionary.Upsert(i, (i + 2).ToString()).Dismiss();
+                    }
+                }
+
+                await dictionary.Ping();
+
+                await dictionary.Save();
+            }
+
+            options.DeleteOnClose = true;
+
+            using (var dictionary = new FasterDictionary<int, string>(TestHelper.GetKeyComparer<int>(), options))
+            {
+
+                for (var i = 0; i < 100; i++)
+                {
+
+                    result = await dictionary.TryGet(i);
+
+                    if (i % 4 == 0)
+                    {
+                        Assert.False(result.Found);
+                    }
+                    else
+                    {
+                        Assert.True(result.Found);
+                        Assert.Equal((result.Key + 2).ToString(), result.Value);
+                    }
+                }
+
+                var loopCount = 0;
+
+                await foreach (var entry in dictionary.AsKeysIterator())
+                {
+                    loopCount++;
+                    Assert.False(entry % 4 == 0);
+                }
+
+                result = await dictionary.TryGet(loops);
+                Assert.False(result.Found);
+
+                Assert.Equal(loopCount, count);
+            }
         }
+
+
+
+
+
+
 
         [Theory]
 
