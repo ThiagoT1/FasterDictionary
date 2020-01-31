@@ -40,7 +40,6 @@ namespace FasterDictionary
         }
 
         Options _options;
-        KeyComparerAdapter _keyComparer;
 
     }
 }

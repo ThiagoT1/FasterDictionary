@@ -3,7 +3,7 @@ using System;
 
 namespace FasterDictionary.Tests
 {
-    internal class FasterLogger : FasterDictionary<int, string>.ILogger
+    internal class FasterLogger<TKey, TValue> : FasterDictionary<TKey, TValue>.ILogger
     {
         public void Debug(params string[] info)
         {

@@ -195,6 +195,11 @@ namespace FasterDictionary.Tests
                 {
                     loopCount++;
                     Assert.False(entry.Key % 4 == 0);
+                    if ((entry.Key + 2).ToString() != entry.Value)
+                    {
+                        var realEntry = await dictionary.TryGet(entry.Key);
+                        Assert.Equal(realEntry.Value, entry.Value);
+                    }
                     Assert.Equal((entry.Key + 2).ToString(), entry.Value);
                 }
 
@@ -385,11 +390,11 @@ namespace FasterDictionary.Tests
         [Theory]
         [InlineData(226, 1, CheckpointType.FoldOver)]  //OK
         [InlineData(227, 1, CheckpointType.FoldOver)]  //OK
-        [InlineData(200_000, 1, CheckpointType.FoldOver)]  //OK
+        [InlineData(200_000, 100, CheckpointType.FoldOver)]  //OK
 
         [InlineData(2832, 1, CheckpointType.Snapshot)] //OK
         [InlineData(2833, 1, CheckpointType.Snapshot)] //OK
-        [InlineData(200_000, 1, CheckpointType.Snapshot)] //OK
+        [InlineData(200_000, 100, CheckpointType.Snapshot)] //OK
         public async Task AddRestartGetValues(int loops, int step, CheckpointType checkpointType)
         {
             var options = GetOptions($"{nameof(AddRestartGetValues)}-{loops}");
@@ -424,7 +429,7 @@ namespace FasterDictionary.Tests
                 {
                     await dictionary.Ping();
 
-                    for (var i = 0; i < loops; i++)
+                    for (var i = 0; i < loops; i+= step)
                     {
                         var guid = GetGuid(i);
                         result = await dictionary.TryGet(i);
@@ -564,7 +569,7 @@ namespace FasterDictionary.Tests
                 PersistDirectoryPath = DataDirectoryPath,
                 DeleteOnClose = deleteOnClose,
                 CheckPointType = FASTER.core.CheckpointType.Snapshot,
-                Logger = new FasterLogger()
+                Logger = new FasterLogger<int, string>()
             };
         }
 

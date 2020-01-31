@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.IO;
 using System.Linq;
 using System.Runtime.ExceptionServices;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Threading.Channels;
 using System.Threading.Tasks;
@@ -14,14 +15,15 @@ namespace FasterDictionary
     public partial class FasterDictionary<TKey, TValue>
     {
 
-
+        public static bool ValueIsByteArray = typeof(TValue) == typeof(byte[]);
 
         public FasterDictionary(IFasterEqualityComparer<TKey> keyComparer, Options options = default)
         {
             if (keyComparer == null)
                 throw new ArgumentNullException(nameof(keyComparer));
 
-            _keyComparer = new KeyComparerAdapter(keyComparer);
+
+
             _options = Options.Default;
             if (options.PersistDirectoryPath != null)
             {
@@ -85,17 +87,14 @@ namespace FasterDictionary
                 Directory.CreateDirectory(checkpointDir);
 
                 var indexLogPath = Path.Combine(logDir, $"{_options.DictionaryName}-index.log");
-                var objectLogPath = Path.Combine(logDir, $"{_options.DictionaryName}-object.log");
 
                 IndexLog = Devices.CreateLogDevice(indexLogPath, true, _options.DeleteOnClose, -1, true);
-                ObjectLog = Devices.CreateLogDevice(objectLogPath, true, _options.DeleteOnClose, -1, true);
 
                 UnsafeContext = new Context();
 
                 Log = new LogSettings
                 {
                     LogDevice = IndexLog,
-                    ObjectLogDevice = ObjectLog,
                     SegmentSizeBits = (int)_options.SegmentSize,
                     PageSizeBits = (int)_options.PageSize,
                     MemorySizeBits = (int)_options.MemorySize,
@@ -113,17 +112,20 @@ namespace FasterDictionary
                     CheckPointType = _options.CheckPointType
                 };
 
+                var variableLengthStructSettings = new VariableLengthStructSettings<VariableEnvelope, VariableEnvelope>()
+                {
+                    keyLength = VariableEnvelope.Settings,
+                    valueLength = VariableEnvelope.Settings
+                };
+
                 KV = new FasterKV
-                    <KeyEnvelope, ValueEnvelope, ValueEnvelope, ValueEnvelope, Context, Functions>(
+                    <VariableEnvelope, VariableEnvelope, byte[], byte[], Context, Functions>(
                         1L << 20, functions,
                         Log,
                         checkpointSettings,
-                        new SerializerSettings<KeyEnvelope, ValueEnvelope>
-                        {
-                            keySerializer = () => new KeySerializer(),
-                            valueSerializer = () => new ValueSerializer()
-                        },
-                        _keyComparer
+                        null,
+                        new VariableEnvelopeComparer(),
+                        variableLengthStructSettings
                     );
 
                 var logCount = Directory.GetDirectories(checkpointDir).Length;
@@ -235,7 +237,7 @@ namespace FasterDictionary
 
                 string[] currentShots = null;
 
-                
+
                 if (_options.CheckPointType == CheckpointType.Snapshot && Directory.Exists(searchPath))
                 {
                     currentShots = Directory
@@ -290,8 +292,24 @@ namespace FasterDictionary
 
         private void ServeRemove(Job job)
         {
-            KeyEnvelope keyEnvelope = new KeyEnvelope(job.Key);
-            ValueEnvelope outputEnvelope = default;
+
+            //Hell! I need to tunr this to a method
+
+            var keyJson = JsonSerializer.SerializeToUtf8Bytes(job.Key, JsonOptions);
+
+            Span<byte> keyTarget = stackalloc byte[keyJson.Length + sizeof(int)];
+
+            ref var keyEnvelope = ref MemoryMarshal.AsRef<VariableEnvelope>(keyTarget);
+
+            keyTarget = keyTarget.Slice(sizeof(int), keyTarget.Length - sizeof(int));
+
+            keyEnvelope.Size = keyJson.Length;
+
+            keyJson.CopyTo(keyTarget);
+
+
+
+            byte[] output = default;
 
             Status status = Status.ERROR;
             try
@@ -300,7 +318,7 @@ namespace FasterDictionary
                 if (status == Status.PENDING)
                 {
                     KVSession.CompletePending(true, true);
-                    status = UnsafeContext.Consume(out outputEnvelope);
+                    status = UnsafeContext.Consume(out output);
                 }
             }
             catch (Exception e)
@@ -322,12 +340,25 @@ namespace FasterDictionary
             }
         }
 
+
         private void ServeGetContent(Job job)
         {
-            KeyEnvelope keyEnvelope = new KeyEnvelope(job.Key);
+            //Hell! I need to tunr this to a method
 
-            ValueEnvelope inputEnvelope = default;
-            ValueEnvelope outputEnvelope = default;
+            var keyJson = JsonSerializer.SerializeToUtf8Bytes(job.Key, JsonOptions);
+
+            Span<byte> keyTarget = stackalloc byte[keyJson.Length + sizeof(int)];
+
+            ref var keyEnvelope = ref MemoryMarshal.AsRef<VariableEnvelope>(keyTarget);
+
+            keyTarget = keyTarget.Slice(sizeof(int), keyTarget.Length - sizeof(int));
+
+            keyEnvelope.Size = keyJson.Length;
+
+            keyJson.CopyTo(keyTarget);
+
+            byte[] inputEnvelope = default;
+            byte[] outputEnvelope = default;
 
             Status status = Status.ERROR;
 
@@ -344,7 +375,15 @@ namespace FasterDictionary
                         job.Complete(false);
                         break;
                     case Status.OK:
-                        job.Complete(true, outputEnvelope.Content);
+                        if (ValueIsByteArray)
+                        {
+                            job.Complete(true, (TValue)(object)outputEnvelope);
+                            break;
+                        }
+
+                        var readOnly = new ReadOnlySpan<byte>(outputEnvelope);
+                        TValue value = JsonSerializer.Deserialize<TValue>(readOnly);
+                        job.Complete(true, value);
                         break;
                     default:
                         job.Complete(new Exception($"Read WTF => {status} - {JsonSerializer.Serialize(job.Key)}"));
@@ -357,7 +396,7 @@ namespace FasterDictionary
             }
         }
 
-        private Status ExecuteGet(ref KeyEnvelope keyEnvelope, ref ValueEnvelope inputEnvelope, ref ValueEnvelope outputEnvelope)
+        private Status ExecuteGet(ref VariableEnvelope keyEnvelope, ref byte[] inputEnvelope, ref byte[] outputEnvelope)
         {
             Status status = KVSession.Read(ref keyEnvelope, ref inputEnvelope, ref outputEnvelope, UnsafeContext, GetSerialNum());
             if (status == Status.PENDING)
@@ -371,9 +410,45 @@ namespace FasterDictionary
 
         private void ServeUpsert(Job job)
         {
+            //Hell! I need to tunr this to a method
 
-            KeyEnvelope keyEnvelope = new KeyEnvelope(job.Key);
-            ValueEnvelope valueEnvelope = new ValueEnvelope(job.Input);
+            var keyJson = JsonSerializer.SerializeToUtf8Bytes(job.Key, JsonOptions);
+
+            Span<byte> keyTarget = new byte[keyJson.Length + sizeof(int)];
+
+            ref var keyEnvelope = ref MemoryMarshal.AsRef<VariableEnvelope>(keyTarget);
+
+            keyTarget = keyTarget.Slice(sizeof(int), keyTarget.Length - sizeof(int));
+
+            keyEnvelope.Size = keyJson.Length;
+
+            keyJson.CopyTo(keyTarget);
+
+
+            byte[] valueBytes;
+
+            Span<byte> valueTarget;
+
+            if (ValueIsByteArray)
+            {
+                valueBytes = (byte[])(object)job.Input;
+            }
+            else
+            {
+                valueBytes = JsonSerializer.SerializeToUtf8Bytes(job.Input, JsonOptions);
+            }
+
+            valueTarget = new byte[valueBytes.Length + sizeof(int)];
+
+            ref var valueEnvelope = ref MemoryMarshal.AsRef<VariableEnvelope>(valueTarget);
+
+            valueTarget = valueTarget.Slice(sizeof(int), valueTarget.Length - sizeof(int));
+
+            valueEnvelope.Size = valueBytes.Length;
+
+            valueBytes.CopyTo(valueTarget);
+
+
             try
             {
                 KVSession.Upsert(ref keyEnvelope, ref valueEnvelope, Context.Empty, GetSerialNum());
@@ -402,42 +477,6 @@ namespace FasterDictionary
             IterateKey = 8,
             ReleaseIterator = 9,
             Dispose = 10
-        }
-        class Job
-        {
-            const bool ContinueAsync = true;
-            const bool ContinueSync = false;
-
-            public AsyncOperation<ReadResult> AsyncOp;
-
-            public TKey Key;
-            public TValue Input;
-            public JobTypes JobType;
-
-            public Job(TKey key, TValue input, JobTypes type)
-            {
-                AsyncOp = new AsyncOperation<ReadResult>(ContinueAsync);
-                //TaskSource = new TaskCompletionSource<ReadResult>(TaskCreationOptions.RunContinuationsAsynchronously);
-                Key = key;
-                Input = input;
-                JobType = type;
-            }
-
-            public Job(TKey key, JobTypes type)
-            {
-                AsyncOp = new AsyncOperation<ReadResult>(ContinueAsync);
-                Key = key;
-                JobType = type;
-            }
-
-            public Job(JobTypes type)
-            {
-                AsyncOp = new AsyncOperation<ReadResult>(ContinueAsync);
-                JobType = type;
-            }
-
-            public void Complete(bool found, TValue value = default) => AsyncOp?.TrySetResult(new ReadResult(found, Key, value));
-            public void Complete(Exception e) => AsyncOp?.TrySetException(e);
         }
 
         public readonly struct ReadResult
