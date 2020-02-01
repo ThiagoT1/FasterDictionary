@@ -148,6 +148,70 @@ namespace FasterDictionary.Tests
             }
         }
 
+        [Theory(Timeout = 3600000)]
+        [InlineData(2, 1)]
+        [InlineData(100, 1)]
+        [InlineData(10_000, 1)]
+        [InlineData(50_000, 1)]
+        [InlineData(500_000, 1)]
+        [InlineData(1_000_000, 1)]
+        public async Task AddUpdateParallelGet(int loops, int step)
+        {
+            FasterDictionary<string[], string>.ReadResult result;
+            using (var dictionary = new FasterDictionary<string[], string>(TestHelper.GetKeyComparer<string[]>(), GetOptions($"{nameof(AddGet)}-{loops}")))
+            {
+                var keys = new List<string[]>();
+
+                for (var i = 0; i < loops; i++)
+                {
+                    keys.Add(new[] { i.ToString() });
+                    dictionary.Upsert(keys[i], (i + 1).ToString()).Dismiss();
+                }
+
+                await dictionary.Ping();
+
+                for (var i = 0; i < loops; i++)
+                    dictionary.Upsert(keys[i], (i + 10).ToString()).Dismiss();
+
+                await dictionary.Ping();
+
+                var tasks = new Task<FasterDictionary<string[], string>.ReadResult>[2];
+
+
+                for (var i = 0; i < loops; i += step)
+                {
+                    var index = i % 2;
+                    tasks[index] = dictionary.TryGet(keys[i]).AsTask();
+                    if (index == 1)
+                    {
+                        await Task.WhenAll(tasks);
+
+                        for (var k = 0; k < tasks.Length; k++)
+                        {
+                            result = tasks[k].Result;
+                            Assert.True(result.Found);
+                        }
+
+                    }
+                }
+
+                await Task.WhenAll(tasks);
+
+                for (var k = 0; k < tasks.Length; k++)
+                {
+                    result = tasks[k].Result;
+                    Assert.True(result.Found);
+                }
+
+
+                await dictionary.Ping();
+
+
+                result = await dictionary.TryGet(new[] { loops.ToString() });
+                Assert.False(result.Found);
+            }
+        }
+
         [Theory(Timeout = 900000)]
         [InlineData(2)]
         [InlineData(100)]

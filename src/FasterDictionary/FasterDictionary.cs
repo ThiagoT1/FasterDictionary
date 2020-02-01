@@ -6,6 +6,7 @@ using System.Linq;
 using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using System.Threading.Tasks.Sources;
@@ -364,30 +365,17 @@ namespace FasterDictionary
 
             try
             {
-                status = ExecuteGet(ref keyEnvelope, ref inputEnvelope, ref outputEnvelope);
+                Context context = new Context();
 
-                switch (status)
+                status = KVSession.Read(ref keyEnvelope, ref inputEnvelope, ref outputEnvelope, context, GetSerialNum());
+                if (status == Status.PENDING)
                 {
-                    case Status.ERROR:
-                        job.Complete(new Exception($"read error => {JsonSerializer.Serialize(job.Key)}"));
-                        break;
-                    case Status.NOTFOUND:
-                        job.Complete(false);
-                        break;
-                    case Status.OK:
-                        if (ValueIsByteArray)
-                        {
-                            job.Complete(true, (TValue)(object)outputEnvelope);
-                            break;
-                        }
 
-                        var readOnly = new ReadOnlySpan<byte>(outputEnvelope);
-                        TValue value = JsonSerializer.Deserialize<TValue>(readOnly);
-                        job.Complete(true, value);
-                        break;
-                    default:
-                        job.Complete(new Exception($"Read WTF => {status} - {JsonSerializer.Serialize(job.Key)}"));
-                        break;
+                    CompleteReadingAsync(job, context, KVSession).Dismiss();
+                }
+                else
+                {
+                    CompleteRead(job, outputEnvelope, status);
                 }
             }
             catch (Exception e)
@@ -396,17 +384,52 @@ namespace FasterDictionary
             }
         }
 
-        private Status ExecuteGet(ref VariableEnvelope keyEnvelope, ref byte[] inputEnvelope, ref byte[] outputEnvelope)
+        private async ValueTask CompleteReadingAsync(Job job, Context context, ClientSession<VariableEnvelope, VariableEnvelope, byte[], byte[], Context, Functions> session)
         {
-            Status status = KVSession.Read(ref keyEnvelope, ref inputEnvelope, ref outputEnvelope, UnsafeContext, GetSerialNum());
-            if (status == Status.PENDING)
+            await KVSession.CompletePendingAsync(true, default);
+            Status status;
+            byte[] outputEnvelope;
+
+            try
             {
-                KVSession.CompletePending(true, true);
-                status = UnsafeContext.Consume(out outputEnvelope);
+                status = context.Consume(out outputEnvelope);
+                CompleteRead(job, outputEnvelope, status);
+            }
+            catch (Exception e)
+            {
+                job.Complete(e);
             }
 
-            return status;
         }
+
+        private static void CompleteRead(Job job, byte[] outputEnvelope, Status status)
+        {
+            switch (status)
+            {
+                case Status.ERROR:
+                    job.Complete(new Exception($"read error => {JsonSerializer.Serialize(job.Key)}"));
+                    break;
+                case Status.NOTFOUND:
+                    job.Complete(false);
+                    break;
+                case Status.OK:
+                    if (ValueIsByteArray)
+                    {
+                        job.Complete(true, (TValue)(object)outputEnvelope);
+                        break;
+                    }
+
+                    var readOnly = new ReadOnlySpan<byte>(outputEnvelope);
+                    TValue value = JsonSerializer.Deserialize<TValue>(readOnly);
+                    job.Complete(true, value);
+                    break;
+                default:
+                    job.Complete(new Exception($"Read WTF => {status} - {JsonSerializer.Serialize(job.Key)}"));
+                    break;
+            }
+        }
+
+
 
         private void ServeUpsert(Job job)
         {
