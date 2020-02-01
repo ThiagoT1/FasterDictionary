@@ -178,7 +178,8 @@ namespace FasterDictionary.Tests
                 var count = 0;
                 await foreach (var entry in dictionary)
                 {
-                    Assert.Equal((count++ + 10).ToString(), entry.Value);
+                    count++;
+                    Assert.Equal((int.Parse(entry.Key[0]) + 10).ToString(), entry.Value);
                 }
 
                 result = await dictionary.TryGet(new[] { loops.ToString() });
