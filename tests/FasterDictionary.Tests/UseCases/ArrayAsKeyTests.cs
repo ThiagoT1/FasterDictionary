@@ -155,7 +155,6 @@ namespace FasterDictionary.Tests
         [InlineData(50_000)]
         [InlineData(500_000)]
         [InlineData(1_000_000)]
-
         public async Task AddUpdateIterate(int loops)
         {
             FasterDictionary<string[], string>.ReadResult result;
