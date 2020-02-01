@@ -106,14 +106,13 @@ namespace FasterDictionary.Tests
         }
 
 
-        [Theory(Timeout = 300000)]
+        [Theory(Timeout = 900000)]
         [InlineData(2, 1)]
         [InlineData(100, 1)]
         [InlineData(10_000, 1)]
         [InlineData(50_000, 1)]
         [InlineData(500_000, 1)]
         [InlineData(1_000_000, 1)]
-        //        [InlineData(5_000_000, 31)]
         public async Task AddUpdateGet(int loops, int step)
         {
             FasterDictionary<string[], string>.ReadResult result;
@@ -123,7 +122,7 @@ namespace FasterDictionary.Tests
 
                 for (var i = 0; i < loops; i++)
                 {
-                    keys.Add(new[] { "A", i.ToString() });
+                    keys.Add(new[] { i.ToString() });
                     dictionary.Upsert(keys[i], (i + 1).ToString()).Dismiss();
                 }
 
@@ -144,12 +143,12 @@ namespace FasterDictionary.Tests
                 await dictionary.Ping();
 
 
-                result = await dictionary.TryGet(new[] { "A", loops.ToString() });
+                result = await dictionary.TryGet(new[] { loops.ToString() });
                 Assert.False(result.Found);
             }
         }
 
-        [Theory(Timeout = 300000)]
+        [Theory(Timeout = 900000)]
         [InlineData(2)]
         [InlineData(100)]
         [InlineData(10_000)]
@@ -166,7 +165,7 @@ namespace FasterDictionary.Tests
 
                 for (var i = 0; i < loops; i++)
                 {
-                    keys.Add(new[] { "A", i.ToString() });
+                    keys.Add(new[] { i.ToString() });
                     dictionary.Upsert(keys[i], (i + 1).ToString()).Dismiss();
                 }
 
@@ -180,11 +179,10 @@ namespace FasterDictionary.Tests
                 var count = 0;
                 await foreach (var entry in dictionary)
                 {
-                    count++;
-                    Assert.Equal((int.Parse(entry.Key[1]) + 10).ToString(), entry.Value);
+                    Assert.Equal((count++ + 10).ToString(), entry.Value);
                 }
 
-                result = await dictionary.TryGet(new[] { "A", loops.ToString() });
+                result = await dictionary.TryGet(new[] { loops.ToString() });
                 Assert.False(result.Found);
 
                 Assert.Equal(loops, count);
