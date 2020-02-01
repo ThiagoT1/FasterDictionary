@@ -106,7 +106,7 @@ namespace FasterDictionary.Tests
         }
 
 
-        [Theory(Timeout = 900000)]
+        [Theory(Timeout = 3600000)]
         [InlineData(2, 1)]
         [InlineData(100, 1)]
         [InlineData(10_000, 1)]
