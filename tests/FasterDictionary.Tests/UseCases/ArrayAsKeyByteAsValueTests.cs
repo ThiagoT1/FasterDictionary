@@ -39,7 +39,7 @@ namespace FasterDictionary.Tests
         [InlineData(2, 1)]
         [InlineData(100, 1)]
         [InlineData(10_000, 1)]
-        [InlineData(1_000_000, 50)]
+        [InlineData(1_000_000, 1)]
         //[InlineData(2_000_000, 31)]
         public async Task AddGet(int loops, int step)
         {

@@ -229,17 +229,10 @@ namespace FasterDictionary
                         ref var key = ref iter1.GetKey();
                         ref var value = ref iter1.GetValue();
 
-                        if (recordInfo.Tombstone)
-                        {
-                            _iterationState.KVSession.Delete(ref key, default, 0);
-                        }
-                        else
-                        {
-                            if (recordInfo.Version != 1)
-                                _iterationState.KVSession.Delete(ref key, default, 0);
+                        _iterationState.KVSession.Delete(ref key, default, 0);
 
+                        if (!recordInfo.Tombstone)
                             _iterationState.KVSession.Upsert(ref key, ref value, default, 0);
-                        }
                     }
                 }
 
