@@ -348,7 +348,7 @@ namespace FasterDictionary
 
             var keyJson = JsonSerializer.SerializeToUtf8Bytes(job.Key, JsonOptions);
 
-            Span<byte> keyTarget = stackalloc byte[keyJson.Length + sizeof(int)];
+            Span<byte> keyTarget = new byte[keyJson.Length + sizeof(int)];
 
             ref var keyEnvelope = ref MemoryMarshal.AsRef<VariableEnvelope>(keyTarget);
 
@@ -358,25 +358,13 @@ namespace FasterDictionary
 
             keyJson.CopyTo(keyTarget);
 
-            byte[] inputEnvelope = default;
             byte[] outputEnvelope = default;
-
-            Status status = Status.ERROR;
 
             try
             {
-                Context context = new Context();
 
-                status = KVSession.Read(ref keyEnvelope, ref inputEnvelope, ref outputEnvelope, context, GetSerialNum());
-                if (status == Status.PENDING)
-                {
-
-                    CompleteReadingAsync(job, context, KVSession).Dismiss();
-                }
-                else
-                {
-                    CompleteRead(job, outputEnvelope, status);
-                }
+                var resultTask = KVSession.ReadAsync(keyEnvelope, outputEnvelope, true, default);
+                CompleteReadingAsync(job, outputEnvelope, resultTask, KVSession).Dismiss();
             }
             catch (Exception e)
             {
@@ -384,15 +372,21 @@ namespace FasterDictionary
             }
         }
 
-        private async ValueTask CompleteReadingAsync(Job job, Context context, ClientSession<VariableEnvelope, VariableEnvelope, byte[], byte[], Context, Functions> session)
+        private async ValueTask CompleteReadingAsync(Job job, byte[] outputEnvelope, ValueTask<(Status, byte[])> task, ClientSession<VariableEnvelope, VariableEnvelope, byte[], byte[], Context, Functions> session)
         {
-            await KVSession.CompletePendingAsync(true, default);
-            Status status;
-            byte[] outputEnvelope;
-
             try
             {
-                status = context.Consume(out outputEnvelope);
+                var result = await task;
+
+                if (result.Item1 == Status.PENDING)
+                {
+                    job.Complete(new Exception("Status was pending on async"));
+                }
+
+
+                Status status = result.Item1;
+                outputEnvelope = result.Item2;
+
                 CompleteRead(job, outputEnvelope, status);
             }
             catch (Exception e)
