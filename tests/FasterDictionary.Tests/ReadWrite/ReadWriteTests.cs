@@ -1,5 +1,6 @@
 using FasterDictionary.Tests.Util;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using Xunit;
@@ -115,15 +116,21 @@ namespace FasterDictionary.Tests
 
                 await dictionary.Ping();
 
+                var tasks = new List<ValueTask<FasterDictionary<int, string>.ReadResult>>(loops);
+                
                 for (var i = 0; i < loops; i += step)
                 {
-                    result = await dictionary.TryGet(i);
+                    tasks.Add(dictionary.TryGet(i));
+                }
+
+                for (var i = 0; i < loops; i += step)
+                {
+                    result = await tasks[i];
                     Assert.True(result.Found);
                     Assert.Equal((i + 10).ToString(), result.Value);
                 }
 
                 await dictionary.Ping();
-
 
                 result = await dictionary.TryGet(loops);
                 Assert.False(result.Found);

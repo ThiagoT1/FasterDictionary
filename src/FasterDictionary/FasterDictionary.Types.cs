@@ -230,7 +230,7 @@ namespace FasterDictionary
 
             public void ReadCompletionCallback(ref VariableEnvelope key, ref byte[] input, ref byte[] output, Context ctx, Status status)
             {
-                ctx.CompleteRead(ref status, ref output);
+                ctx?.CompleteRead(ref status, ref output);
             }
 
             public void RMWCompletionCallback(ref VariableEnvelope key, ref byte[] input, Context ctx, Status status)

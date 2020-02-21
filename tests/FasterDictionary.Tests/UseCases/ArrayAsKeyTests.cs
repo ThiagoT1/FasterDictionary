@@ -112,7 +112,7 @@ namespace FasterDictionary.Tests
         [InlineData(10_000, 1)]
         [InlineData(50_000, 1)]
         [InlineData(500_000, 1)]
-        [InlineData(1_000_000, 1)]
+        //[InlineData(1_000_000, 1)]
         public async Task AddUpdateGet(int loops, int step)
         {
             FasterDictionary<string[], string>.ReadResult result;
@@ -133,12 +133,20 @@ namespace FasterDictionary.Tests
 
                 await dictionary.Ping();
 
+                var tasks = new List<ValueTask<FasterDictionary<string[], string>.ReadResult>>(loops);
+
                 for (var i = 0; i < loops; i += step)
                 {
-                    result = await dictionary.TryGet(keys[i]);
+                    tasks.Add(dictionary.TryGet(keys[i]));
+                }
+
+                for (var i = 0; i < loops; i += step)
+                {
+                    result = await tasks[i];
                     Assert.True(result.Found);
                     Assert.Equal((i + 10).ToString(), result.Value);
                 }
+
 
                 await dictionary.Ping();
 
