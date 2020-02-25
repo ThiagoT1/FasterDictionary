@@ -133,35 +133,17 @@ namespace FasterDictionary.Tests
 
                 await dictionary.Ping();
 
-                var tasks = new List<ValueTask<FasterDictionary<string[], string>.ReadResult>>(100);
-
                 var readCount = 0;
 
                 for (var i = 0; i < loops; i += step)
                 {
-                    tasks.Add(dictionary.TryGet(keys[i]));
-                    if (tasks.Count == 100)
-                    {
-                        for (var j = 0; j < tasks.Count; j++)
-                        {
-                            result = await tasks[j];
-                            Assert.True(result.Found);
-                            Assert.Equal((readCount++ + 10).ToString(), result.Value);
-                        }
-                        tasks.Clear();
-                    }
-                }
-
-                for (var i = 0; i < tasks.Count; i++)
-                {
-                    result = await tasks[i];
+                    result = await dictionary.TryGet(keys[i]);
                     Assert.True(result.Found);
                     Assert.Equal((readCount++ + 10).ToString(), result.Value);
+                    
                 }
 
-
                 await dictionary.Ping();
-
 
                 result = await dictionary.TryGet(new[] { loops.ToString() });
                 Assert.False(result.Found);
