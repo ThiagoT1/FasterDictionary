@@ -359,8 +359,6 @@ namespace FasterDictionary
             keyJson.CopyTo(keyTarget);
 
             byte[] inputEnvelope = default;
-            byte[] outputEnvelope = default;
-
 
             try
             {

@@ -8,8 +8,11 @@ using System.Threading.Tasks;
 using System.Threading.Tasks.Sources;
 using System.Threading;
 
+#nullable enable annotations
+
 namespace FasterDictionary
 {
+
 
     internal abstract class AsyncOperation
     {
