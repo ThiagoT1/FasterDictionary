@@ -366,11 +366,12 @@ namespace FasterDictionary
                 var readTask = KVSession.ReadAsync(ref keyEnvelope, ref inputEnvelope, null);
                 if (readTask.IsCompleted)
                 {
-                    CompleteGetContent(readTask.Result.Item1, readTask.Result.Item2, job);
+                    CompleteGetContent(readTask.Result, job);
                 }
                 else
                 {
-                    readTask.AsTask().ContinueWith(t => CompleteGetContent(t.Result.Item1, t.Result.Item2, job));
+                    readTask.AsTask().ContinueWith(t => CompleteGetContent(readTask.Result, job));
+
                 }
 
             }
@@ -380,30 +381,40 @@ namespace FasterDictionary
             }
         }
 
-        private void CompleteGetContent(Status status, byte[] outputEnvelope, Job job)
+        private void CompleteGetContent(FasterKV<VariableEnvelope, VariableEnvelope, byte[], byte[], Context, Functions>.ReadAsyncResult readRsult, Job job)
         {
-            switch (status)
+            try
             {
-                case Status.ERROR:
-                    job.Complete(new Exception($"read error => {JsonSerializer.Serialize(job.Key)}"));
-                    break;
-                case Status.NOTFOUND:
-                    job.Complete(false);
-                    break;
-                case Status.OK:
-                    if (ValueIsByteArray)
-                    {
-                        job.Complete(true, (TValue)(object)outputEnvelope);
+                var result = readRsult.CompleteRead();
+                var status = result.Item1;
+                var outputEnvelope = result.Item2;
+                switch (status)
+                {
+                    case Status.ERROR:
+                        job.Complete(new Exception($"read error => {JsonSerializer.Serialize(job.Key)}"));
                         break;
-                    }
+                    case Status.NOTFOUND:
+                        job.Complete(false);
+                        break;
+                    case Status.OK:
+                        if (ValueIsByteArray)
+                        {
+                            job.Complete(true, (TValue)(object)outputEnvelope);
+                            break;
+                        }
 
-                    var readOnly = new ReadOnlySpan<byte>(outputEnvelope);
-                    TValue value = JsonSerializer.Deserialize<TValue>(readOnly);
-                    job.Complete(true, value);
-                    break;
-                default:
-                    job.Complete(new Exception($"Read WTF => {status} - {JsonSerializer.Serialize(job.Key)}"));
-                    break;
+                        var readOnly = new ReadOnlySpan<byte>(outputEnvelope);
+                        TValue value = JsonSerializer.Deserialize<TValue>(readOnly);
+                        job.Complete(true, value);
+                        break;
+                    default:
+                        job.Complete(new Exception($"Read WTF => {status} - {JsonSerializer.Serialize(job.Key)}"));
+                        break;
+                }
+            }
+            catch (Exception e)
+            {
+                job.Complete(e);
             }
         }
 
